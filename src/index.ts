@@ -26,12 +26,8 @@ export default Plugin.define({
         const { parentID, sessionID } = input as { parentID: string; sessionID: string }
         const info = await ctx.session.get({ sessionID })
         if (info.fork?.sessionID !== parentID) throw new Error(`${sessionID} is not a fork of ${parentID}`)
-        // Archived sessions stay off Home, the palette and notifications. The side panel is their only home.
-        await ctx.session.update({
-          sessionID,
-          archived: true,
-          metadata: { ...info.metadata, sidechat: { parentID } },
-        })
+        // The plugin API's update ignores `archived`, so the GUI archives the fork over HTTP.
+        await ctx.session.update({ sessionID, metadata: { ...info.metadata, sidechat: { parentID } } })
         // A synthetic message after the inherited history keeps the parent's prompt cache usable.
         await ctx.session.synthetic({
           sessionID,

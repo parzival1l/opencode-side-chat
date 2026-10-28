@@ -32,7 +32,8 @@ An OpenCode Desktop plugin for side chats. A side chat branches off the chat you
 - **GUI** (`src/gui.tsx`, built to `dist/gui-experimental.cjs`) forks the chat with `session.fork`, renders the side chat, and sends prompts to the fork.
 - **Transcript** (`src/live.ts`). The app keeps transcripts only for open tabs and the last three chats viewed, and drops any other chat's messages when they change. A side chat is neither, so each open side chat keeps its transcript in a store of its own. That store hears the same server events, filtered to the side chat.
 - **Server** (`src/index.ts`) owns the links. It stores each chat's side chats in the plugin's key-value storage, so they survive restarts.
-- On link, the server archives the fork, which keeps it off Home, the command palette and notifications. It also adds one synthetic message that tells the model it is in a side chat. That message sits after the inherited history, so the parent's prompt cache still applies.
+- After the link, the GUI archives the fork over HTTP, which keeps it off Home, session search and the command palette. The plugin API's `session.update` ignores `archived`, so the server can't do this itself. Each window also archives any listed side chat that is not archived yet.
+- On link, the server adds one synthetic message that tells the model it is in a side chat. That message sits after the inherited history, so the parent's prompt cache still applies.
 - **RPC** (`src/rpc.ts`) is the contract between the two parts. The server emits `updated` after every change.
 
 ## Install
@@ -65,4 +66,4 @@ OpenCode installs the package and reloads plugins when the config changes.
 - The GUI API is experimental. This plugin pins `@opencode/plugin@2.2.0`, which matches OpenCode Desktop 2.2.0.
 - The side panel draws its own transcript with the app's styles. It is close to the main timeline but not identical: no diffs, no model picker, and questions from the `question` tool can only be skipped.
 - Side chats work on the desktop's own server. Deleting the main chat leaves its side chats archived but unlisted.
-- The fork shows on Home for a moment before the server archives it.
+- The fork shows on Home for a moment before the GUI archives it.

@@ -47,6 +47,19 @@ export function createModel(ctx: Context) {
     setChats(state.parentID, [...state.chats])
   }
 
+  // Archived sessions stay off Home and the session search; the side panel is their only home. The server is the
+  // source of truth, so each side chat is archived once per window, which also repairs chats linked before this.
+  const archived = new Set<string>()
+  function archive(session: SessionRef, chats: readonly Chat[]) {
+    for (const chat of chats) {
+      if (archived.has(chat.sessionID) || session.server.data.session.get(chat.sessionID)?.time.archived) continue
+      archived.add(chat.sessionID)
+      session.server.client.session.update({ sessionID: chat.sessionID, archived: true }).catch(() => {
+        archived.delete(chat.sessionID)
+      })
+    }
+  }
+
   function fail(error: unknown) {
     ctx.toast.show({
       title: ctx.t("error", { message: error instanceof Error ? error.message : String(error) }),
@@ -70,7 +83,10 @@ export function createModel(ctx: Context) {
     loading.add(session.id)
     rpc(session)
       .list({ parentID: session.id })
-      .then(put, fail)
+      .then((value) => {
+        put(value)
+        archive(session, (value as State).chats)
+      }, fail)
       .finally(() => loading.delete(session.id))
   }
 
@@ -131,7 +147,9 @@ export function createModel(ctx: Context) {
       const info = await client.session.fork({ sessionID: session.id })
       forked = info.id
       data.session.remember(info)
-      put(await rpc(session).link({ parentID: session.id, sessionID: info.id }))
+      const linked = await rpc(session).link({ parentID: session.id, sessionID: info.id })
+      put(linked)
+      archive(session, (linked as State).chats)
       if (question?.trim()) {
         setDrafts(info.id, question.trim())
         autosend.add(info.id)

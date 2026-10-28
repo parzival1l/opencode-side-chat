@@ -177,6 +177,40 @@ function Message(props: { readonly message: SessionMessageInfo; readonly pending
   )
 }
 
+/** The main chat's model, as its composer names it: "Anthropic / Claude Opus 5.5 · High". Side chats follow it. */
+function ModelLabel(props: { readonly model: Model; readonly session: MountedSession }) {
+  const ctx = usePlugin()
+  const data = () => props.session.server.data
+  createKeyed(
+    () => props.session.location,
+    (location) => {
+      void Promise.all([data().location.model.sync(location), data().location.provider.sync(location)]).catch(
+        () => undefined,
+      )
+    },
+  )
+  const label = () => {
+    const ref = props.model.modelOf(props.session)
+    if (!ref) return ""
+    const location = props.session.location
+    const model = data()
+      .location.model.list(location)
+      ?.find((item) => item.providerID === ref.providerID && (item.id === ref.id || item.modelID === ref.id))
+    const provider = data()
+      .location.provider.list(location)
+      ?.find((item) => item.id === ref.providerID)
+    const variant = ref.variant ? ` · ${ref.variant[0]!.toUpperCase()}${ref.variant.slice(1)}` : ""
+    return `${provider?.name ?? ref.providerID} / ${model?.name ?? ref.id}${variant}`
+  }
+  return (
+    <Show when={label()}>
+      <span class="sidechat-model" title={ctx.t("model.title")}>
+        {label()}
+      </span>
+    </Show>
+  )
+}
+
 export function ChatView(props: { readonly model: Model; readonly session: MountedSession; readonly tab: string }) {
   const ctx = usePlugin()
   const model = props.model
@@ -203,7 +237,12 @@ export function ChatView(props: { readonly model: Model; readonly session: Mount
   const forms = () => (sessionID() && data().session.form.list(sessionID())) || []
 
   createKeyed(sessionID, (id) => {
-    void Promise.all([data().session.permission.sync(id), data().session.form.sync(id)]).catch(() => undefined)
+    // The side chat's own info tells `send` which model it is on.
+    void Promise.all([
+      data().session.sync(id),
+      data().session.permission.sync(id),
+      data().session.form.sync(id),
+    ]).catch(() => undefined)
   })
 
   let root: HTMLDivElement | undefined
@@ -385,6 +424,7 @@ export function ChatView(props: { readonly model: Model; readonly session: Mount
                 },
               ]}
             />
+            <ModelLabel model={model} session={props.session} />
             <span class="sidechat-spacer" />
             <Show
               when={running() && !model.draft(sessionID()).trim()}
@@ -456,6 +496,7 @@ export function DraftView(props: { readonly model: Model; readonly session: Moun
             }}
           />
           <div class="sidechat-composer-bar">
+            <ModelLabel model={model} session={props.session} />
             <span class="sidechat-spacer" />
             <Show
               when={!busy()}

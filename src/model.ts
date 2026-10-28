@@ -18,6 +18,11 @@ export const draftOf = (parentID: string) => `${DRAFT}:${parentID}`
 export const QUOTE_EVENT = "opencode:quote"
 const CHAT = "chat-"
 
+type ModelRef = { readonly id: string; readonly providerID: string; readonly variant?: string }
+
+export const sameModel = (a: ModelRef, b: ModelRef | undefined) =>
+  !!b && a.id === b.id && a.providerID === b.providerID && (a.variant ?? "") === (b.variant ?? "")
+
 /** The panel tab id of a side chat, and back. */
 export const tabOf = (sessionID: string) => `${CHAT}${sessionID}`
 export const chatOf = (tab: string) => (tab.startsWith(CHAT) ? tab.slice(CHAT.length) : undefined)
@@ -115,12 +120,24 @@ export function createModel(ctx: Context) {
     ctx.layout.open(key(LIST), session, { tab: "select" })
   }
 
+  /** The main chat's model, which every side chat of it uses too. */
+  const modelOf = (session: SessionRef) => session.server.data.session.get(session.id)?.model
+
+  /** Moves a side chat onto the main chat's model when the two differ. Undefined when they already match. */
+  function follow(session: SessionRef, sessionID: string): Promise<unknown> | undefined {
+    const main = modelOf(session)
+    const side = session.server.data.session.get(sessionID)?.model
+    if (!main || sameModel(main, side)) return undefined
+    // A failed switch must not lose the question; it then goes out on the side chat's current model.
+    return session.server.client.session.switchModel({ sessionID, model: main }).catch(() => undefined)
+  }
+
   /** Sends through the side chat's own transcript, so the question shows the moment it is sent. */
   function send(session: SessionRef, transcript: Transcript, sessionID: string, text: string) {
     const value = text.trim()
     if (!value) return
     setDrafts(sessionID, "")
-    transcript.prompt(value).catch((error: unknown) => {
+    transcript.prompt(value, follow(session, sessionID)).catch((error: unknown) => {
       setDrafts(sessionID, (current) => current || text)
       fail(error)
     })
@@ -250,6 +267,7 @@ export function createModel(ctx: Context) {
     showList,
     start,
     fork,
+    modelOf,
     starting: (session: SessionRef) => !!starting[session.key],
     send,
     remove,

@@ -60,7 +60,8 @@ export function createTranscript(server: ServerRef, sessionID: string, forked: (
   return {
     messages: () => store().session.message.list(sessionID),
     pending: () => store().session.pending.list(sessionID),
-    prompt: (text: string) => store().session.prompt({ sessionID, text }),
+    /** Shows the question at once; it goes to the server after `gate` settles. */
+    prompt: (text: string, gate?: Promise<unknown>) => store().session.prompt({ sessionID, text, gate }),
   }
 }
 

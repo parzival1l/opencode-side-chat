@@ -21,6 +21,7 @@ export default Plugin.define({
       "composer.placeholder": "Ask a follow-up…",
       "composer.send": "Send",
       "composer.stop": "Stop",
+      "model.title": "Side chats use the main chat's model",
       menu: "Side chat actions",
       "quote.action": "Quote selection here",
       "selection.main": "Send selection to main chat",

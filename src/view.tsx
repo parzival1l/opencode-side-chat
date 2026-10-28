@@ -5,13 +5,27 @@ import type {
   SessionMessageAssistantTool,
   SessionMessageInfo,
 } from "@opencode/client"
-import { createEffect, createMemo, createSignal, For, Match, onCleanup, onMount, Show, Switch } from "solid-js"
+import {
+  children,
+  createEffect,
+  createMemo,
+  createSignal,
+  For,
+  Match,
+  onCleanup,
+  onMount,
+  Show,
+  Switch,
+  type JSX,
+} from "solid-js"
 import { createStore } from "solid-js/store"
 import { Portal } from "solid-js/web"
 import { FormCard } from "./form"
+import { questionsOf, type Answer } from "./forms"
 import { createTranscript } from "./live"
 import { chatOf, draftOf, QUOTE_EVENT, selectedText, type Model } from "./model"
-import { ownMessages, shownOf, toolSummary, type Quote } from "./transcript"
+import { QuestionDock } from "./question"
+import { answeredQuestions, dismissedQuestion, ownMessages, shownOf, toolSummary, type Quote } from "./transcript"
 
 const OUTPUT_LIMIT = 6000
 // Scrolling within this many pixels of the top loads older messages.
@@ -285,25 +299,30 @@ function UserBubble(props: { readonly message: { text: string; metadata?: Record
 }
 
 function Row(props: {
-  readonly icon: "mcp" | "code" | "warning"
+  readonly icon: "mcp" | "code" | "warning" | "bubble-5"
   readonly title: string
   readonly subtitle?: string
   readonly running?: boolean
   readonly failed?: boolean
   readonly detail?: () => string
   readonly markdown?: boolean
+  /** Shown when the row is open, instead of `detail`. */
+  readonly children?: JSX.Element
+  readonly defaultOpen?: boolean
 }) {
   const ctx = usePlugin()
-  const [open, setOpen] = createSignal(false)
+  const [open, setOpen] = createSignal(props.defaultOpen ?? false)
   const body = () => props.detail?.().trim() ?? ""
+  const content = children(() => props.children)
+  const openable = () => !!content() || !!body()
   return (
     <div class="sidechat-row" data-failed={props.failed ? "" : undefined}>
       <button
         type="button"
         data-component="tool-trigger"
-        data-clickable={body() ? "true" : "false"}
+        data-clickable={openable() ? "true" : "false"}
         aria-expanded={open()}
-        disabled={!body()}
+        disabled={!openable()}
         onClick={() => setOpen(!open())}
       >
         <div data-slot="basic-tool-tool-trigger-content">
@@ -324,7 +343,8 @@ function Row(props: {
           </div>
         </div>
       </button>
-      <Show when={open() && body()}>
+      <Show when={open() && content()}>{content()}</Show>
+      <Show when={open() && !content() && body()}>
         <Show when={props.markdown} fallback={<pre class="sidechat-output">{clip(body())}</pre>}>
           <div class="sidechat-reasoning">
             <ctx.ui.Markdown text={body()} />
@@ -332,6 +352,50 @@ function Row(props: {
         </Show>
       </Show>
     </div>
+  )
+}
+
+/**
+ * A `question` tool call as the main timeline draws it. While it waits, the dock shows the form instead. Once answered
+ * it lists each question with its answers; once dismissed it says so.
+ */
+function QuestionTool(props: { readonly part: SessionMessageAssistantTool }) {
+  const ctx = usePlugin()
+  const state = () => props.part.state
+  const items = () => {
+    const current = state()
+    return answeredQuestions(current.input, "metadata" in current ? current.metadata : undefined)
+  }
+  const dismissed = () => {
+    const current = state()
+    return current.status === "error" && dismissedQuestion(current.error.message)
+  }
+  return (
+    <Switch fallback={<Tool part={props.part} />}>
+      <Match when={state().status === "streaming" || state().status === "running"}>{null}</Match>
+      <Match when={dismissed()}>
+        <div class="sidechat-question-dismissed">{ctx.t("questions.dismissed")}</div>
+      </Match>
+      <Match when={state().status === "completed"}>
+        <Row
+          icon="bubble-5"
+          title={ctx.t("questions.title")}
+          subtitle={items().length ? ctx.t("questions.answered", { count: items().length }) : undefined}
+          defaultOpen
+        >
+          <div class="sidechat-question-answers" data-component="question-answers">
+            <For each={items()}>
+              {(item) => (
+                <div data-slot="question-answer-item">
+                  <div data-slot="question-text">{item.question}</div>
+                  <div data-slot="answer-text">{item.answer.join(", ") || ctx.t("questions.none")}</div>
+                </div>
+              )}
+            </For>
+          </div>
+        </Row>
+      </Match>
+    </Switch>
   )
 }
 
@@ -392,6 +456,9 @@ function Assistant(props: { readonly message: SessionMessageAssistant }) {
                   streaming={streaming() && i() === props.message.content.length - 1}
                 />
               )}
+            </Match>
+            <Match when={part.type === "tool" && part.name === "question" && part}>
+              {(tool) => <QuestionTool part={tool()} />}
             </Match>
             <Match when={part.type === "tool" && part}>{(tool) => <Tool part={tool()} />}</Match>
           </Switch>
@@ -456,6 +523,7 @@ export function ChatView(props: { readonly model: Model; readonly session: Mount
   }
   const permissions = () => (sessionID() && data().session.permission.list(sessionID())) || []
   const forms = () => (sessionID() && data().session.form.list(sessionID())) || []
+  const asking = () => forms().some((form) => questionsOf(form))
 
   createKeyed(sessionID, (id) => {
     // The side chat's own info tells `send` which model it is on.
@@ -603,18 +671,20 @@ export function ChatView(props: { readonly model: Model; readonly session: Mount
           )}
         </For>
         <For each={forms()}>
-          {(form) => (
-            <FormCard
-              form={form}
-              onReply={(answer) =>
-                data().session.form.reply({ sessionID: sessionID(), formID: form.id, answer }).catch(model.fail)
-              }
-              onSkip={() => data().session.form.cancel({ sessionID: sessionID(), formID: form.id }).catch(model.fail)}
-            />
-          )}
+          {(form) => {
+            const reply = (answer: Answer) =>
+              data().session.form.reply({ sessionID: sessionID(), formID: form.id, answer }).catch(model.fail)
+            const cancel = () => data().session.form.cancel({ sessionID: sessionID(), formID: form.id }).catch(model.fail)
+            return (
+              <Show when={questionsOf(form)} fallback={<FormCard form={form} onReply={reply} onSkip={cancel} />}>
+                {(questions) => <QuestionDock form={form} questions={questions()} onReply={reply} onDismiss={cancel} />}
+              </Show>
+            )
+          }}
         </For>
 
-        <div class="sidechat-composer">
+        {/* A question takes the composer's place until it is answered or dismissed, as in the main chat. */}
+        <div class="sidechat-composer" hidden={asking()}>
           <QuoteCards model={model} composer={sessionID()} onDone={focusEnd} />
           <textarea
             ref={input}

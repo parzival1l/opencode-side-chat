@@ -133,6 +133,34 @@ export function toolSummary(name: string, input: unknown): { title: string; subt
   return { title, subtitle: subtitle.replace(/\s+/g, " ").trim() }
 }
 
+/** One question of a `question` tool call and the answers picked for it, as the main timeline lists them. */
+export interface AnsweredQuestion {
+  readonly question: string
+  readonly answer: readonly string[]
+}
+
+/**
+ * The questions a `question` tool call asked, each with its answers from the call's `metadata.answers`. A question
+ * without a matching answer gets an empty list.
+ */
+export function answeredQuestions(input: unknown, metadata: unknown): AnsweredQuestion[] {
+  const record = (value: unknown) => (value && typeof value === "object" ? (value as Record<string, unknown>) : {})
+  const questions = Array.isArray(record(input).questions) ? (record(input).questions as unknown[]) : []
+  const answers = Array.isArray(record(metadata).answers) ? (record(metadata).answers as unknown[]) : []
+  return questions.flatMap((item, i) => {
+    const question = record(item).question
+    if (typeof question !== "string") return []
+    const given = answers[i]
+    const answer = Array.isArray(given) ? given.filter((value): value is string => typeof value === "string") : []
+    return [{ question, answer }]
+  })
+}
+
+/** The error a `question` tool call ends with when the user dismisses its form. */
+export function dismissedQuestion(message: string): boolean {
+  return message.includes("dismissed this question")
+}
+
 /** The text of the latest assistant answer, or "" when there is none yet. */
 export function lastAnswer(messages: readonly SessionMessageInfo[]): string {
   for (let i = messages.length - 1; i >= 0; i--) {

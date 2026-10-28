@@ -213,6 +213,45 @@ label.sidechat-option {
   gap: 6px;
 }
 
+/* The question dock uses the main chat's markup and styles; these fit it to the side panel. */
+.sidechat-question [data-component="dock-prompt"] {
+  max-height: 70vh;
+}
+.sidechat-question [data-slot="question-options"] {
+  max-height: 50vh;
+}
+.sidechat-question [data-slot="question-option"]:not([data-custom="true"]):is(:hover, :focus-visible):not(:disabled),
+.sidechat-question [data-slot="question-option"][data-custom="true"]:hover:not([data-disabled="true"]) {
+  background: var(--v2-question-answer-bg-selected);
+}
+.sidechat-question [data-minimized] [data-slot="question-text"] {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.sidechat-question [data-minimized] [data-slot="question-body"] {
+  gap: 0;
+}
+.sidechat-question-chevron svg {
+  transition: transform 0.2s;
+}
+.sidechat-question [data-minimized] .sidechat-question-chevron svg {
+  transform: rotate(180deg);
+}
+.sidechat-question-answers {
+  margin-inline-start: 24px;
+  user-select: text;
+}
+.sidechat-question-dismissed {
+  align-self: flex-end;
+  color: var(--v2-text-text-faint);
+  font-size: 13px;
+}
+
+.sidechat-composer[hidden] {
+  display: none;
+}
 .sidechat-composer {
   display: flex;
   flex-direction: column;

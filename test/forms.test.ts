@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test"
 import type { FormField } from "@opencode/client"
-import { answerOf, initial, missing, visible } from "../src/forms"
+import { answerOf, initial, missing, questionAnswer, questionsOf, visible } from "../src/forms"
 
 const pick: FormField = {
   key: "pick",
@@ -46,4 +46,53 @@ test("answerOf sends visible filled fields, numbers as numbers, and booleans eve
     why: "because",
     ok: true,
   })
+})
+
+// The fields the server makes for a `question` tool call with two questions: one choice, then many.
+const questionForm = {
+  metadata: { kind: "question", tool: { messageID: "m1", id: "t1" } },
+  fields: [
+    {
+      key: "q0",
+      type: "string",
+      title: "Where",
+      description: "Where did the form show up?",
+      options: [
+        { value: "Side chat", label: "Side chat" },
+        { value: "Main chat", label: "Main chat" },
+      ],
+      custom: true,
+    },
+    { key: "q1", type: "multiselect", title: "Tags", options: [{ value: "x", label: "X" }], custom: true },
+  ],
+} satisfies Parameters<typeof questionsOf>[0]
+
+test("questionsOf reads a question form and leaves other forms alone", () => {
+  expect(questionsOf(questionForm)).toEqual([
+    {
+      key: "q0",
+      header: "Where",
+      question: "Where did the form show up?",
+      options: [
+        { value: "Side chat", label: "Side chat" },
+        { value: "Main chat", label: "Main chat" },
+      ],
+      multiple: false,
+    },
+    { key: "q1", header: "Tags", question: "Tags", options: [{ value: "x", label: "X" }], multiple: true },
+  ])
+  expect(questionsOf({ ...questionForm, metadata: { kind: "mcp-elicitation" } })).toBeUndefined()
+  expect(questionsOf({ ...questionForm, metadata: undefined })).toBeUndefined()
+})
+
+test("questionAnswer sends one answer as a string, many as a list, and skips unanswered questions", () => {
+  const questions = questionsOf(questionForm)!
+  expect(
+    questionAnswer(questions, [
+      { chosen: ["Main chat"], own: "ignored while off", ownOn: false },
+      { chosen: ["x"], own: "  mine  ", ownOn: true },
+    ]),
+  ).toEqual({ q0: "Main chat", q1: ["x", "mine"] })
+  expect(questionAnswer(questions, [{ chosen: [], own: " typed ", ownOn: true }])).toEqual({ q0: "typed" })
+  expect(questionAnswer(questions, [{ chosen: [], own: "   ", ownOn: true }, undefined])).toEqual({})
 })

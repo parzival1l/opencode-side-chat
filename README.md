@@ -8,7 +8,8 @@ An OpenCode Desktop plugin for side chats. A side chat branches off the chat you
 - **No empty side chats.** **New side chat** opens a composer. The fork happens when you send its first message, so a side chat you never use leaves nothing behind. Listing side chats also deletes any untitled side chat that is over 10 minutes old and has no question after its fork.
 - **Context.** The side chat is a fork of the current chat at its first message, so it knows everything said up to then. Its tab shows only what you say after the fork.
 - **Isolation.** Nothing said in a side chat reaches the main chat. The main chat keeps running while you ask.
-- **Tools.** A side chat has the same tools and permissions as the main chat. Answer its permission requests and its questions (the `question` tool and other forms) in the side chat's tab.
+- **Tools.** A side chat has the same tools and permissions as the main chat. Answer its permission requests and its forms in the side chat's tab.
+- **Questions.** A `question` tool call opens the main chat's question dock in place of the side chat's composer: numbered answers, your own answer, a minimize chevron, and **Dismiss**, **Back**, **Next** and **Submit** (`mod+enter`). Once answered, the transcript lists each question with its answers, as the main chat does.
 - **History.** Closing a tab keeps the side chat. The **Side chats** tab and the composer pill list every side chat of the current chat, newest first. Pick one to reopen it. Delete it from its `⋯` menu or the list.
 
 ## Quotes

@@ -1,4 +1,4 @@
-import type { FormField } from "@opencode/client"
+import type { FormField, FormInfo } from "@opencode/client"
 
 /** Answers being filled in, by field key. Text fields hold strings, so an emptied number field stays empty. */
 export type Draft = Record<string, string | boolean | string[]>
@@ -57,5 +57,62 @@ export function answerOf(fields: readonly FormField[], draft: Draft): Answer {
     if (field.type === "string" && typeof value === "string") answer[field.key] = value.trim()
     else if (value !== undefined) answer[field.key] = value
   }
+  return answer
+}
+
+/** One question of a `question` tool form: a choice, of one answer or many, with an answer of the user's own. */
+export interface Question {
+  readonly key: string
+  readonly header: string
+  readonly question: string
+  readonly options: readonly { value: string; label: string; description?: string }[]
+  readonly multiple: boolean
+}
+
+/**
+ * The questions of a form the `question` tool opened, or undefined for any other form. The server makes one field per
+ * question: its header as the title and the question as the description.
+ */
+export function questionsOf(form: Pick<FormInfo, "metadata" | "fields">): Question[] | undefined {
+  if (form.metadata?.kind !== "question") return undefined
+  const questions = form.fields.flatMap((field): Question[] => {
+    if (field.type !== "string" && field.type !== "multiselect") return []
+    return [
+      {
+        key: field.key,
+        header: field.title ?? "",
+        question: field.description ?? field.title ?? "",
+        options: field.options ?? [],
+        multiple: field.type === "multiselect",
+      },
+    ]
+  })
+  return questions.length ? questions : undefined
+}
+
+/** What the user has picked for one question: options by value, and an answer of their own while `ownOn`. */
+export interface Picked {
+  readonly chosen: readonly string[]
+  readonly own: string
+  readonly ownOn: boolean
+}
+
+export const nothingPicked: Picked = { chosen: [], own: "", ownOn: false }
+
+/** The answers a question has: its chosen options, then the user's own answer when it is on and not blank. */
+export function answersOf(picked: Picked | undefined): string[] {
+  if (!picked) return []
+  const own = picked.own.trim()
+  return [...picked.chosen, ...(picked.ownOn && own ? [own] : [])]
+}
+
+/** The reply to a question form: each answered question by key, one answer as a string and many as a list. */
+export function questionAnswer(questions: readonly Question[], picked: readonly (Picked | undefined)[]): Answer {
+  const answer: Answer = {}
+  questions.forEach((question, i) => {
+    const answers = answersOf(picked[i])
+    if (answers.length === 0) return
+    answer[question.key] = question.multiple ? answers : answers[0]!
+  })
   return answer
 }

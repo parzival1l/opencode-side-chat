@@ -1,6 +1,8 @@
 import { expect, test } from "bun:test"
 import type { SessionMessageInfo } from "@opencode/client"
 import {
+  answeredQuestions,
+  dismissedQuestion,
   lastAnswer,
   ownMessages,
   PRIMER,
@@ -122,4 +124,24 @@ test("toMarkdown writes questions, answers, tool lines and errors", () => {
   expect(toMarkdown(messages)).toBe(
     "**User:**\n\nWhere is the fork copied?\n\n**Assistant:**\n\n_Read projector.ts_\n\nIn projector.ts.\n\n_Error: rate limited_",
   )
+})
+
+test("answeredQuestions pairs each question with its answers", () => {
+  const input = {
+    questions: [{ question: "Where?", header: "Where" }, { header: "no question text" }, { question: "Tags?" }],
+  }
+  expect(answeredQuestions(input, { answers: [["Somewhere else"], ["skipped"], ["a", "b"]] })).toEqual([
+    { question: "Where?", answer: ["Somewhere else"] },
+    { question: "Tags?", answer: ["a", "b"] },
+  ])
+  expect(answeredQuestions(input, undefined)).toEqual([
+    { question: "Where?", answer: [] },
+    { question: "Tags?", answer: [] },
+  ])
+  expect(answeredQuestions(undefined, undefined)).toEqual([])
+})
+
+test("dismissedQuestion spots the error a dismissed question form ends with", () => {
+  expect(dismissedQuestion("The user dismissed this question")).toBe(true)
+  expect(dismissedQuestion("Tool execution aborted")).toBe(false)
 })

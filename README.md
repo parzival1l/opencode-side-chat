@@ -13,7 +13,7 @@ An OpenCode Desktop plugin for side chats. A side chat branches off the chat you
 
 ## Quotes
 
-- Select text in a side chat and press the quote button. The selection becomes a quote card in the side chat's own composer, drawn like the main chat's. Click the card to add a comment; the × removes it.
+- Select text in a side chat and press the quote button. As in the main chat, the selection becomes a quote card in the side chat's own composer and its comment box opens at once. Type a comment and press Enter, or Esc to keep the quote without one. Click the card later to change the comment; the × removes it.
 - The model reads each quote, and its comment, in the same words the main chat sends. The sent message shows your text with the quote cards under it.
 - Text you select in the main chat before you start a side chat becomes a quote card in the new side chat.
 - A plugin's "Quote" action works the same way. Before a quote goes to the main chat, the plugin dispatches a cancelable, bubbling `opencode:quote` event with `detail: { text }` on the selection. A side chat cancels it and takes the quote. [opencode-notepad](https://github.com/parzival1l/opencode-notepad) does this from 0.0.4.

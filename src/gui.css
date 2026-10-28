@@ -281,51 +281,105 @@ label.sidechat-option {
   width: 10px;
   height: 10px;
 }
-.sidechat-comment {
+.sidechat-quote-editor {
+  position: fixed;
+  z-index: 50;
+  overflow-y: auto;
+  border-radius: 6px;
+  box-shadow: var(--v2-elevation-raised);
+}
+.sidechat-quote-editor-source {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.sidechat-quote-editor-source svg {
+  flex-shrink: 0;
+}
+.sidechat-quote-editor-source span {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  line-height: var(--line-height-tight);
+}
+
+/* The app's comment editor styles, copied: they ship in a chunk the app may not have loaded yet. */
+.sidechat-quote-editor [data-component="line-comment-v2"] {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  max-width: 400px;
+  font-family: var(--v2-font-family-sans);
+  font-variant-numeric: tabular-nums;
+}
+.sidechat-quote-editor [data-component="line-comment-v2"] * {
+  box-sizing: border-box;
+}
+.sidechat-quote-editor [data-slot="line-comment-v2-shell"] {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  margin-bottom: 4px;
-  padding: 10px;
-  border: 1px solid var(--v2-border-border-base);
-  border-radius: 8px;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px;
+  border-radius: 6px;
   background: var(--v2-background-bg-layer-01);
+  box-shadow: var(--v2-elevation-raised);
 }
-.sidechat-comment textarea {
-  min-height: 40px;
+.sidechat-quote-editor [data-slot="line-comment-v2-field"] {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+}
+.sidechat-quote-editor [data-slot="line-comment-v2-textarea"] {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  margin: 0;
   padding: 0;
   border: none;
   outline: none;
   resize: none;
   background: transparent;
   color: var(--v2-text-text-base);
-  font: inherit;
+  font-family: inherit;
   font-size: 13px;
-  line-height: 1.5;
+  font-weight: 440;
+  line-height: var(--line-height-compact);
+  letter-spacing: -0.04px;
+  unicode-bidi: plaintext;
+  text-align: start;
 }
-.sidechat-comment textarea::placeholder {
+.sidechat-quote-editor [data-slot="line-comment-v2-textarea"]::placeholder {
   color: var(--v2-text-text-faint);
+  user-select: none;
 }
-.sidechat-comment-quote {
+.sidechat-quote-editor [data-slot="line-comment-v2-footer"] {
   display: flex;
   align-items: center;
   gap: 4px;
+  width: 100%;
   min-width: 0;
-  color: var(--v2-text-text-muted);
-  font-size: 12px;
 }
-.sidechat-comment-quote span {
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
+.sidechat-quote-editor [data-slot="line-comment-v2-footer-meta"] {
+  flex: auto;
+  min-width: 0;
+  color: var(--v2-text-text-faint);
+  font-size: 11px;
+  font-weight: 530;
+  line-height: 1;
+  letter-spacing: 0.05px;
 }
-.sidechat-comment-quote svg {
-  flex-shrink: 0;
-}
-.sidechat-comment-actions {
+.sidechat-quote-editor [data-slot="line-comment-v2-footer-actions"] {
   display: flex;
-  justify-content: flex-end;
-  gap: 6px;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 8px;
+  margin-inline-start: auto;
 }
 @media (prefers-reduced-motion: reduce) {
   .sidechat-quote-remove { transition: none; }

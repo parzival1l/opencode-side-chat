@@ -28,7 +28,7 @@ export default Plugin.define({
       "quote.main": "Conversation",
       "quote.addComment": "Add comment",
       "quote.editComment": "Edit comment",
-      "quote.commentPlaceholder": "Add context for this quote",
+      "quote.commentPlaceholder": "Add context for this change",
       "quote.cancel": "Cancel",
       "quote.comment": "Comment",
       "quote.remove": "Remove quote",

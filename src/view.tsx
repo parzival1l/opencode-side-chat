@@ -6,9 +6,11 @@ import type {
   SessionMessageInfo,
 } from "@opencode/client"
 import { createMemo, createSignal, For, Match, onCleanup, onMount, Show, Switch } from "solid-js"
+import { createStore } from "solid-js/store"
+import { Portal } from "solid-js/web"
 import { FormCard } from "./form"
 import { createTranscript } from "./live"
-import { chatOf, draftOf, QUOTE_EVENT, selectedText, type Attached, type Model } from "./model"
+import { chatOf, draftOf, QUOTE_EVENT, selectedText, type Model } from "./model"
 import { ownMessages, shownOf, toolSummary, type Quote } from "./transcript"
 
 const OUTPUT_LIMIT = 6000
@@ -63,78 +65,167 @@ function QuoteCard(props: {
   )
 }
 
+const GAP = 8
+const EDITOR_WIDTH = 380
+
+/**
+ * The comment box of a composer quote, as the main chat draws it: the app's `line-comment-v2` editor, floating
+ * above the card in a portal. A click outside closes it while the comment is unchanged.
+ */
+function QuoteEditor(props: {
+  readonly anchor: HTMLElement
+  readonly quote: Quote
+  readonly onSubmit: (comment: string) => void
+  readonly onClose: () => void
+}) {
+  const ctx = usePlugin()
+  const [draft, setDraft] = createSignal(props.quote.comment ?? "")
+  const [rect, setRect] = createSignal(props.anchor.getBoundingClientRect())
+  const [viewport, setViewport] = createSignal(window.innerWidth)
+  const [height, setHeight] = createSignal(0)
+  let element: HTMLDivElement | undefined
+  let field: HTMLTextAreaElement | undefined
+
+  const measure = () => {
+    setRect(props.anchor.getBoundingClientRect())
+    setViewport(window.innerWidth)
+  }
+  const outside = (event: PointerEvent) => {
+    const target = event.target
+    if (target instanceof Node && (element?.contains(target) || props.anchor.contains(target))) return
+    if (draft().trim() === (props.quote.comment ?? "").trim()) props.onClose()
+  }
+
+  onMount(() => {
+    window.addEventListener("resize", measure)
+    document.addEventListener("scroll", measure, { capture: true, passive: true })
+    document.addEventListener("pointerdown", outside)
+    const observer = new ResizeObserver(() => {
+      if (element) setHeight(element.offsetHeight)
+      measure()
+    })
+    if (element) observer.observe(element)
+    observer.observe(props.anchor)
+    requestAnimationFrame(() => field?.focus())
+    onCleanup(() => {
+      window.removeEventListener("resize", measure)
+      document.removeEventListener("scroll", measure, { capture: true })
+      document.removeEventListener("pointerdown", outside)
+      observer.disconnect()
+    })
+  })
+
+  const width = () => Math.min(EDITOR_WIDTH, viewport() - GAP * 2)
+  const left = () => Math.min(Math.max(rect().left, GAP), viewport() - width() - GAP)
+  const top = () => {
+    const above = rect().top - height() - GAP
+    return above >= GAP ? above : rect().bottom + GAP
+  }
+  const submit = () => props.onSubmit(draft().trim())
+
+  return (
+    <Portal>
+      <div
+        ref={element}
+        class="sidechat-quote-editor"
+        data-prevent-autofocus
+        style={{
+          top: `${top()}px`,
+          left: `${left()}px`,
+          width: `${width()}px`,
+          // Transparent rather than hidden while unmeasured, so the comment field can take focus as it mounts.
+          opacity: height() === 0 ? 0 : undefined,
+        }}
+      >
+        <div data-component="line-comment-v2" data-variant="editor">
+          <div data-slot="line-comment-v2-shell">
+            <div data-slot="line-comment-v2-field">
+              <textarea
+                ref={field}
+                data-slot="line-comment-v2-textarea"
+                aria-label={ctx.t("quote.comment")}
+                dir="auto"
+                rows={4}
+                placeholder={ctx.t("quote.commentPlaceholder")}
+                value={draft()}
+                onInput={(event) => setDraft(event.currentTarget.value)}
+                onKeyDown={(event) => {
+                  event.stopPropagation()
+                  if (event.isComposing || event.keyCode === 229) return
+                  if (event.key === "Escape") {
+                    event.preventDefault()
+                    event.currentTarget.blur()
+                    props.onClose()
+                    return
+                  }
+                  if (event.key === "Enter" && !event.shiftKey) {
+                    event.preventDefault()
+                    submit()
+                  }
+                }}
+              />
+            </div>
+            <div data-slot="line-comment-v2-footer">
+              <div data-slot="line-comment-v2-footer-meta">
+                <span class="sidechat-quote-editor-source" dir="auto">
+                  <ctx.ui.Icon name={(props.quote.source?.icon ?? "outline-quote") as "outline-quote"} size="small" />
+                  <span>{props.quote.text.slice(0, QUOTE_PREVIEW)}</span>
+                </span>
+              </div>
+              <div data-slot="line-comment-v2-footer-actions">
+                <ctx.ui.Button size="small" variant="ghost" onClick={() => props.onClose()}>
+                  {ctx.t("quote.cancel")}
+                </ctx.ui.Button>
+                <ctx.ui.Button size="small" variant="contrast" onClick={submit}>
+                  {ctx.t("quote.comment")}
+                </ctx.ui.Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </Portal>
+  )
+}
+
 /** A composer's quote cards. Click one to comment on it; the × removes it. */
 function QuoteCards(props: { readonly model: Model; readonly composer: string; readonly onDone?: () => void }) {
   const ctx = usePlugin()
-  const [editing, setEditing] = createSignal<string>()
-  const [comment, setComment] = createSignal("")
-  const current = () => props.model.quotes(props.composer).find((item) => item.key === editing())
-
-  const edit = (item: Attached) => {
-    if (editing() === item.key) return setEditing(undefined)
-    setComment(item.comment ?? "")
-    setEditing(item.key)
-  }
+  // A quote added with its editor open renders its card in the same update, so the anchors are reactive.
+  const [anchors, setAnchors] = createStore<Record<string, HTMLElement | undefined>>({})
+  const editing = () => props.model.quotes(props.composer).find((item) => item.key === props.model.editing(props.composer))
   const close = () => {
-    setEditing(undefined)
+    props.model.editQuote(props.composer)
     props.onDone?.()
-  }
-  const save = () => {
-    const key = editing()
-    if (key) props.model.commentQuote(props.composer, key, comment())
-    close()
   }
 
   return (
     <Show when={props.model.quotes(props.composer).length > 0}>
-      <Show when={current()}>
-        {(item) => (
-          <div class="sidechat-comment" data-component="composer-quote-comment">
-            <div class="sidechat-comment-quote">
-              <ctx.ui.Icon name="outline-quote" size="small" />
-              <span>{item().text.slice(0, QUOTE_PREVIEW)}</span>
-            </div>
-            <textarea
-              ref={(element) => queueMicrotask(() => element.focus())}
-              rows={2}
-              value={comment()}
-              placeholder={ctx.t("quote.commentPlaceholder")}
-              aria-label={ctx.t("quote.commentPlaceholder")}
-              onInput={(event) => setComment(event.currentTarget.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Escape") {
-                  event.preventDefault()
-                  close()
-                }
-                if (event.key !== "Enter" || event.shiftKey || event.isComposing || event.keyCode === 229) return
-                event.preventDefault()
-                save()
-              }}
-            />
-            <div class="sidechat-comment-actions">
-              <ctx.ui.Button size="small" variant="ghost-muted" onClick={close}>
-                {ctx.t("quote.cancel")}
-              </ctx.ui.Button>
-              <ctx.ui.Button size="small" variant="contrast" onClick={save}>
-                {ctx.t("quote.comment")}
-              </ctx.ui.Button>
-            </div>
-          </div>
-        )}
-      </Show>
       <div class="sidechat-quotes">
         <For each={props.model.quotes(props.composer)}>
           {(item) => (
-            <div class="sidechat-quote">
-              <QuoteCard quote={item} active={editing() === item.key} onClick={() => edit(item)} />
+            <div
+              class="sidechat-quote"
+              ref={(element) => {
+                setAnchors(item.key, element)
+                onCleanup(() => setAnchors(item.key, undefined))
+              }}
+            >
+              <QuoteCard
+                quote={item}
+                active={props.model.editing(props.composer) === item.key}
+                onClick={() =>
+                  props.model.editQuote(
+                    props.composer,
+                    props.model.editing(props.composer) === item.key ? undefined : item.key,
+                  )
+                }
+              />
               <button
                 type="button"
                 class="sidechat-quote-remove"
                 aria-label={ctx.t("quote.remove")}
-                onClick={() => {
-                  if (editing() === item.key) setEditing(undefined)
-                  props.model.removeQuote(props.composer, item.key)
-                }}
+                onClick={() => props.model.removeQuote(props.composer, item.key)}
               >
                 <ctx.ui.Icon name="outline-xmark" size="small" />
               </button>
@@ -142,6 +233,23 @@ function QuoteCards(props: { readonly model: Model; readonly composer: string; r
           )}
         </For>
       </div>
+      <Show when={editing()} keyed>
+        {(current) => (
+          <Show when={anchors[current.key]}>
+            {(anchor) => (
+              <QuoteEditor
+                anchor={anchor()}
+                quote={current}
+                onSubmit={(comment) => {
+                  props.model.commentQuote(props.composer, current.key, comment)
+                  close()
+                }}
+                onClose={close}
+              />
+            )}
+          </Show>
+        )}
+      </Show>
     </Show>
   )
 }
@@ -378,10 +486,8 @@ export function ChatView(props: { readonly model: Model; readonly session: Mount
     input.setSelectionRange(input.value.length, input.value.length)
   }
 
-  const quoteHere = (text: string) => {
-    model.addQuote(sessionID(), text, "side")
-    focusEnd()
-  }
+  // As in the main chat, a quote opens its comment box at once; closing the box returns focus to the composer.
+  const quoteHere = (text: string) => model.addQuote(sessionID(), text, "side", true)
 
   // A "Quote" on text selected in this side chat lands in this side chat's composer, not the main chat's.
   const onQuote = (event: Event) => {

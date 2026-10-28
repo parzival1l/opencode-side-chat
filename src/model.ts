@@ -52,6 +52,8 @@ export function createModel(ctx: Context) {
   const [drafts, setDrafts] = createStore<Record<string, string>>({})
   // Quotes per composer, keyed like `drafts`: a side chat's ID, or `draftOf(parentID)` for a new one.
   const [quotes, setQuotes] = createStore<Record<string, readonly Attached[]>>({})
+  // The quote whose comment box is open, per composer.
+  const [editing, setEditing] = createStore<Record<string, string | undefined>>({})
   const loading = new Set<string>()
   // Chats forking a side chat right now. A store, so the "New side chat" tab can show it.
   const [starting, setStarting] = createStore<Record<string, boolean>>({})
@@ -151,6 +153,7 @@ export function createModel(ctx: Context) {
     )
     setDrafts(sessionID, "")
     setQuotes(sessionID, [])
+    setEditing(sessionID, undefined)
     transcript.prompt(prompt.text, prompt.metadata, follow(session, sessionID)).catch((error: unknown) => {
       setDrafts(sessionID, (current) => current || text)
       setQuotes(sessionID, (current = []) => (current.length ? current : attached))
@@ -214,6 +217,7 @@ export function createModel(ctx: Context) {
         setQuotes(info.id, quotes[from] ?? [])
         setDrafts(from, "")
         setQuotes(from, [])
+        setEditing(from, undefined)
         ctx.layout.close(key(DRAFT), session)
       }
       autosend.add(info.id)
@@ -246,6 +250,7 @@ export function createModel(ctx: Context) {
         delete all[sessionID]
       }),
     )
+    setEditing(sessionID, undefined)
     await rpc(session).remove({ parentID: session.id, sessionID }).then(put, fail)
   }
 
@@ -268,18 +273,21 @@ export function createModel(ctx: Context) {
     composer.focus(commentID)
   }
 
-  /** Adds a quote card to a composer. */
-  function addQuote(composer: string, text: string, from: QuoteFrom) {
+  /** Adds a quote card to a composer. With `comment`, its comment box opens at once, as the main chat's Quote does. */
+  function addQuote(composer: string, text: string, from: QuoteFrom, comment = false) {
     const value = text.trim()
     if (!value) return
     const source =
       from === "side"
         ? { label: ctx.t("quote.side"), icon: "speech-bubble", subject: "earlier in this side chat" }
         : { label: ctx.t("quote.main"), icon: "speech-bubble", subject: "the main conversation" }
-    setQuotes(composer, (current = []) => [...current, { key: crypto.randomUUID(), type: "quote", text: value, source }])
+    const key = crypto.randomUUID()
+    setQuotes(composer, (current = []) => [...current, { key, type: "quote", text: value, source }])
+    if (comment) setEditing(composer, key)
   }
 
   function removeQuote(composer: string, key: string) {
+    if (editing[composer] === key) setEditing(composer, undefined)
     setQuotes(composer, (current = []) => current.filter((item) => item.key !== key))
   }
 
@@ -322,6 +330,10 @@ export function createModel(ctx: Context) {
     quotes: (composer: string) => quotes[composer] ?? [],
     addQuote,
     removeQuote,
+    /** The quote whose comment box is open in a composer. */
+    editing: (composer: string) => editing[composer],
+    /** Opens the comment box of one quote, or closes it with no key. */
+    editQuote: (composer: string, key?: string) => setEditing(composer, key),
     commentQuote,
     answerToMain,
     fail,

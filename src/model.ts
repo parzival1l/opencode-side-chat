@@ -3,9 +3,13 @@ import { onCleanup } from "solid-js"
 import { createStore, produce } from "solid-js/store"
 import type { Transcript } from "./live"
 import { SideChat, type Chat, type State } from "./rpc"
-import { lastAnswer, ownMessages, quote, titleFrom, withQuote } from "./transcript"
+import { lastAnswer, ownMessages, titleFrom, withQuote } from "./transcript"
 
 export const LIST = "list"
+/** The "New side chat" tab: a composer with no fork behind it yet. */
+export const DRAFT = "new"
+/** The drafts key of a chat's "New side chat" composer. */
+export const draftOf = (parentID: string) => `${DRAFT}:${parentID}`
 
 /**
  * A cancelable DOM event a plugin's "Quote" action dispatches on the selected text, with `detail: { text }`. A side
@@ -36,7 +40,8 @@ export function createModel(ctx: Context) {
   const [chats, setChats] = createStore<Record<string, readonly Chat[]>>({})
   const [drafts, setDrafts] = createStore<Record<string, string>>({})
   const loading = new Set<string>()
-  const starting = new Set<string>()
+  // Chats forking a side chat right now. A store, so the "New side chat" tab can show it.
+  const [starting, setStarting] = createStore<Record<string, boolean>>({})
   // Side chats whose draft goes out as soon as their view opens: `/side <question>`.
   const autosend = new Set<string>()
 
@@ -126,20 +131,36 @@ export function createModel(ctx: Context) {
     }
   }
 
-  /** Forks the chat into a new side chat and opens it. A question goes straight in; a selection becomes a quote. */
-  async function start(session: SessionRef | undefined, question?: string) {
+  function ready(session: SessionRef | undefined): session is SessionRef {
     if (!session) {
       ctx.toast.show({ title: ctx.t("noChat") })
-      return
+      return false
     }
-    if (!session.id || session.pending || starting.has(session.key)) return
-    const data = session.server.data
-    if (data.session.message.list(session.id).length === 0) {
+    if (!session.id || session.pending) return false
+    if (session.server.data.session.message.list(session.id).length === 0) {
       ctx.toast.show({ title: ctx.t("empty.parent") })
-      return
+      return false
     }
-    const quoted = question?.trim() ? "" : quote(selectedText())
-    starting.add(session.key)
+    return true
+  }
+
+  /**
+   * Starts a side chat. With a question it forks right away and asks it. Without one it opens the "New side chat"
+   * tab, which forks only when its first message goes out, so an unused side chat never leaves a fork behind.
+   */
+  function start(session: SessionRef | undefined, question?: string) {
+    if (question?.trim()) return void fork(session, question.trim())
+    if (!ready(session)) return
+    const selection = selectedText()
+    if (selection) quoteHere(draftOf(session.id), selection)
+    ctx.layout.open(key(DRAFT), session, { tab: "select" })
+  }
+
+  /** Forks the chat into a side chat that asks `question` as soon as its tab opens. */
+  async function fork(session: SessionRef | undefined, question: string) {
+    if (!ready(session) || starting[session.key]) return
+    const data = session.server.data
+    setStarting(session.key, true)
     const progress = ctx.toast.show({ title: ctx.t("starting"), variant: "loading", persistent: true })
     const client = session.server.client
     let forked: string | undefined
@@ -150,16 +171,19 @@ export function createModel(ctx: Context) {
       const linked = await rpc(session).link({ parentID: session.id, sessionID: info.id })
       put(linked)
       archive(session, (linked as State).chats)
-      if (question?.trim()) {
-        setDrafts(info.id, question.trim())
-        autosend.add(info.id)
-      } else if (quoted) setDrafts(info.id, `${quoted}\n\n`)
+      setDrafts(info.id, question)
+      autosend.add(info.id)
+      // The question leaves the "New side chat" tab; the side chat's own tab takes its place.
+      if (drafts[draftOf(session.id)]?.trim() === question) {
+        setDrafts(draftOf(session.id), "")
+        ctx.layout.close(key(DRAFT), session)
+      }
       open(session, info.id)
     } catch (error) {
       if (forked && !find(session.id, forked)) void client.session.remove({ sessionID: forked }).catch(() => undefined)
       fail(error)
     } finally {
-      starting.delete(session.key)
+      setStarting(session.key, false)
       progress.dismiss()
     }
   }
@@ -225,6 +249,8 @@ export function createModel(ctx: Context) {
     open,
     showList,
     start,
+    fork,
+    starting: (session: SessionRef) => !!starting[session.key],
     send,
     remove,
     toMain,

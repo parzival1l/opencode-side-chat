@@ -7,7 +7,7 @@ import type {
 } from "@opencode/client"
 import { createMemo, createSignal, For, Match, onCleanup, onMount, Show, Switch } from "solid-js"
 import { createTranscript } from "./live"
-import { chatOf, QUOTE_EVENT, selectedText, type Model } from "./model"
+import { chatOf, draftOf, QUOTE_EVENT, selectedText, type Model } from "./model"
 import { ownMessages, toolSummary } from "./transcript"
 
 const OUTPUT_LIMIT = 6000
@@ -405,6 +405,69 @@ export function ChatView(props: { readonly model: Model; readonly session: Mount
                 variant="neutral"
                 size="small"
                 onClick={() => model.stop(props.session, sessionID())}
+              />
+            </Show>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/** The "New side chat" tab. Nothing is forked until its first message goes out. */
+export function DraftView(props: { readonly model: Model; readonly session: MountedSession }) {
+  const ctx = usePlugin()
+  const model = props.model
+  const id = () => draftOf(props.session.id)
+  const busy = () => model.starting(props.session)
+  let input: HTMLTextAreaElement | undefined
+
+  const send = () => {
+    const text = model.draft(id()).trim()
+    if (text && !busy()) void model.fork(props.session, text)
+  }
+
+  onMount(() => {
+    if (!input) return
+    input.focus()
+    input.setSelectionRange(input.value.length, input.value.length)
+  })
+
+  return (
+    <div class="sidechat">
+      <div class="sidechat-scroll">
+        <div class="sidechat-log">
+          <p class="sidechat-hint">{ctx.t("empty.chat")}</p>
+        </div>
+      </div>
+      <div class="sidechat-dock">
+        <div class="sidechat-composer">
+          <textarea
+            ref={input}
+            rows={1}
+            value={model.draft(id())}
+            placeholder={ctx.t("composer.placeholder")}
+            aria-label={ctx.t("composer.placeholder")}
+            onInput={(event) => model.setDraft(id(), event.currentTarget.value)}
+            onKeyDown={(event) => {
+              if (event.key !== "Enter" || event.shiftKey || event.isComposing || event.keyCode === 229) return
+              event.preventDefault()
+              send()
+            }}
+          />
+          <div class="sidechat-composer-bar">
+            <span class="sidechat-spacer" />
+            <Show
+              when={!busy()}
+              fallback={<ctx.ui.Loader size="small" />}
+            >
+              <ctx.ui.IconButton
+                icon="arrow-up"
+                label={ctx.t("composer.send")}
+                variant="neutral"
+                size="small"
+                disabled={!model.draft(id()).trim()}
+                onClick={send}
               />
             </Show>
           </div>

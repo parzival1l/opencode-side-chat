@@ -1,7 +1,7 @@
 import { createKeyed, Command, ComposerPill, MenuItem, Panel, Plugin, Style, type PanelTab } from "@opencode/plugin/gui"
-import { Show } from "solid-js"
-import { chatOf, createModel, LIST, tabOf } from "./model"
-import { ChatView, ListView } from "./view"
+import { Match, Switch } from "solid-js"
+import { chatOf, createModel, DRAFT, LIST, tabOf } from "./model"
+import { ChatView, DraftView, ListView } from "./view"
 import css from "./gui.css?inline"
 
 export default Plugin.define({
@@ -63,6 +63,21 @@ export default Plugin.define({
       fallback: true,
     }
 
+    const draftTab: PanelTab = {
+      id: DRAFT,
+      get title() {
+        return ctx.t("command.new")
+      },
+      closable: "compact",
+      fallback: true,
+      label: () => (
+        <span class="sidechat-tab">
+          <ctx.ui.Icon name="plus" size="small" />
+          <span>{ctx.t("command.new")}</span>
+        </span>
+      ),
+    }
+
     function chatTab(parentID: string, sessionID: string): PanelTab {
       const id = tabOf(sessionID)
       const known = tabs.get(id)
@@ -109,6 +124,7 @@ export default Plugin.define({
         const chats = model.list(parentID)
         return input.open.flatMap((id) => {
           if (id === LIST) return [listTab]
+          if (id === DRAFT) return [draftTab]
           const sessionID = chatOf(id)
           if (!sessionID) return []
           if (chats && !chats.some((chat) => chat.sessionID === sessionID)) return []
@@ -117,9 +133,14 @@ export default Plugin.define({
       },
       enter: () => document.querySelector<HTMLTextAreaElement>(".sidechat-composer textarea")?.focus(),
       render: (props) => (
-        <Show when={props.tab.id !== LIST} fallback={<ListView model={model} session={props.session} />}>
-          <ChatView model={model} session={props.session} tab={props.tab.id} />
-        </Show>
+        <Switch fallback={<ChatView model={model} session={props.session} tab={props.tab.id} />}>
+          <Match when={props.tab.id === LIST}>
+            <ListView model={model} session={props.session} />
+          </Match>
+          <Match when={props.tab.id === DRAFT}>
+            <DraftView model={model} session={props.session} />
+          </Match>
+        </Switch>
       ),
     })
 

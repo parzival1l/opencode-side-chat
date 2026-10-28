@@ -1,6 +1,16 @@
 import { expect, test } from "bun:test"
 import type { SessionMessageInfo } from "@opencode/client"
-import { lastAnswer, ownMessages, PRIMER, quote, titleFrom, toMarkdown, toolSummary, unused, withQuote } from "../src/transcript"
+import {
+  lastAnswer,
+  ownMessages,
+  PRIMER,
+  promptOf,
+  shownOf,
+  titleFrom,
+  toMarkdown,
+  toolSummary,
+  unused,
+} from "../src/transcript"
 
 const user = (id: string, created: number, text: string) =>
   ({ id, type: "user", time: { created }, text }) as unknown as SessionMessageInfo
@@ -41,15 +51,36 @@ test("titleFrom uses the first real line and cuts long ones", () => {
   expect(titleFrom("   \n  ")).toBe("")
 })
 
-test("quote marks every line and keeps blank lines inside the quote", () => {
-  expect(quote("one\r\n\r\ntwo")).toBe("> one\n>\n> two")
-  expect(quote("   ")).toBe("")
+const side = { label: "Side chat", icon: "speech-bubble", subject: "earlier in this side chat" }
+
+test("promptOf sends the typed text, then each quote as the main chat words it", () => {
+  const prompt = promptOf("  Why this?  ", [
+    { type: "quote", text: "line one\nline two", source: side },
+    { type: "quote", text: "x = 1", comment: "  is this right?  " },
+  ])
+  expect(prompt.text).toBe(
+    "Why this?\n" +
+      "The user quoted the following from earlier in this side chat:\n> line one\n> line two\n" +
+      "The user quoted the following from earlier in the conversation:\n> x = 1\n\n" +
+      "The user made the following comment regarding this quote: is this right?",
+  )
+  expect(prompt.metadata).toEqual({
+    displayText: "Why this?",
+    comments: [
+      { type: "quote", text: "line one\nline two", source: side },
+      { type: "quote", text: "x = 1", comment: "is this right?" },
+    ],
+  })
 })
 
-test("withQuote adds the quote after the draft and leaves room for the question", () => {
-  expect(withQuote("", "one\ntwo")).toBe("> one\n> two\n\n")
-  expect(withQuote("Why this?\n", "one")).toBe("Why this?\n\n> one\n\n")
-  expect(withQuote("Why this?", "  ")).toBe("Why this?")
+test("promptOf without quotes sends plain text and no metadata", () => {
+  expect(promptOf(" hi ", [])).toEqual({ text: "hi", metadata: undefined })
+})
+
+test("shownOf shows typed text and quote cards, and plain text for other messages", () => {
+  const sent = { text: "long model text", metadata: { displayText: "Why?", comments: [{ type: "quote", text: "a" }, { type: "note" }] } }
+  expect(shownOf(sent)).toEqual({ text: "Why?", quotes: [{ type: "quote", text: "a" }] })
+  expect(shownOf({ text: "plain" })).toEqual({ text: "plain", quotes: [] })
 })
 
 test("toolSummary names what each tool touched", () => {

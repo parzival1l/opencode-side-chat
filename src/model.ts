@@ -3,7 +3,7 @@ import { onCleanup } from "solid-js"
 import { createStore, produce } from "solid-js/store"
 import type { Transcript } from "./live"
 import { SideChat, type Chat, type State } from "./rpc"
-import { lastAnswer, ownMessages, titleFrom, withQuote } from "./transcript"
+import { lastAnswer, ownMessages, promptOf, titleFrom, type Quote } from "./transcript"
 
 export const LIST = "list"
 /** The "New side chat" tab: a composer with no fork behind it yet. */
@@ -40,10 +40,18 @@ export function selectedText(within?: string): string {
   return selection.toString().trim()
 }
 
+/** A quote waiting in a composer. `key` tells the cards apart; it never leaves the window. */
+export type Attached = Quote & { readonly key: string }
+
+/** Where a quote was selected: this side chat, or the main chat. */
+export type QuoteFrom = "side" | "main"
+
 /** Side chats by parent chat, the composer drafts, and every action on them. */
 export function createModel(ctx: Context) {
   const [chats, setChats] = createStore<Record<string, readonly Chat[]>>({})
   const [drafts, setDrafts] = createStore<Record<string, string>>({})
+  // Quotes per composer, keyed like `drafts`: a side chat's ID, or `draftOf(parentID)` for a new one.
+  const [quotes, setQuotes] = createStore<Record<string, readonly Attached[]>>({})
   const loading = new Set<string>()
   // Chats forking a side chat right now. A store, so the "New side chat" tab can show it.
   const [starting, setStarting] = createStore<Record<string, boolean>>({})
@@ -132,18 +140,25 @@ export function createModel(ctx: Context) {
     return session.server.client.session.switchModel({ sessionID, model: main }).catch(() => undefined)
   }
 
-  /** Sends through the side chat's own transcript, so the question shows the moment it is sent. */
-  function send(session: SessionRef, transcript: Transcript, sessionID: string, text: string) {
-    const value = text.trim()
-    if (!value) return
+  /** Sends the composer's text and quotes through the side chat's own transcript, so they show at once. */
+  function send(session: SessionRef, transcript: Transcript, sessionID: string) {
+    const text = drafts[sessionID] ?? ""
+    const attached = quotes[sessionID] ?? []
+    if (!text.trim() && attached.length === 0) return
+    const prompt = promptOf(
+      text,
+      attached.map(({ key: _, ...quote }) => quote),
+    )
     setDrafts(sessionID, "")
-    transcript.prompt(value, follow(session, sessionID)).catch((error: unknown) => {
+    setQuotes(sessionID, [])
+    transcript.prompt(prompt.text, prompt.metadata, follow(session, sessionID)).catch((error: unknown) => {
       setDrafts(sessionID, (current) => current || text)
+      setQuotes(sessionID, (current = []) => (current.length ? current : attached))
       fail(error)
     })
     if (!find(session.id, sessionID)?.title) {
       void rpc(session)
-        .rename({ parentID: session.id, sessionID, title: titleFrom(value) })
+        .rename({ parentID: session.id, sessionID, title: titleFrom(text.trim() || attached[0]?.text || "") })
         .then(put, () => undefined)
     }
   }
@@ -169,12 +184,15 @@ export function createModel(ctx: Context) {
     if (question?.trim()) return void fork(session, question.trim())
     if (!ready(session)) return
     const selection = selectedText()
-    if (selection) quoteHere(draftOf(session.id), selection)
+    if (selection) addQuote(draftOf(session.id), selection, "main")
     ctx.layout.open(key(DRAFT), session, { tab: "select" })
   }
 
-  /** Forks the chat into a side chat that asks `question` as soon as its tab opens. */
-  async function fork(session: SessionRef | undefined, question: string) {
+  /**
+   * Forks the chat into a side chat whose first message goes out as soon as its tab opens: `question`, or else
+   * whatever the "New side chat" tab holds, text and quotes.
+   */
+  async function fork(session: SessionRef | undefined, question?: string) {
     if (!ready(session) || starting[session.key]) return
     const data = session.server.data
     setStarting(session.key, true)
@@ -188,13 +206,17 @@ export function createModel(ctx: Context) {
       const linked = await rpc(session).link({ parentID: session.id, sessionID: info.id })
       put(linked)
       archive(session, (linked as State).chats)
-      setDrafts(info.id, question)
-      autosend.add(info.id)
-      // The question leaves the "New side chat" tab; the side chat's own tab takes its place.
-      if (drafts[draftOf(session.id)]?.trim() === question) {
-        setDrafts(draftOf(session.id), "")
+      if (question) setDrafts(info.id, question)
+      else {
+        // The message leaves the "New side chat" tab; the side chat's own tab takes its place.
+        const from = draftOf(session.id)
+        setDrafts(info.id, drafts[from] ?? "")
+        setQuotes(info.id, quotes[from] ?? [])
+        setDrafts(from, "")
+        setQuotes(from, [])
         ctx.layout.close(key(DRAFT), session)
       }
+      autosend.add(info.id)
       open(session, info.id)
     } catch (error) {
       if (forked && !find(session.id, forked)) void client.session.remove({ sessionID: forked }).catch(() => undefined)
@@ -219,6 +241,11 @@ export function createModel(ctx: Context) {
         delete draft[sessionID]
       }),
     )
+    setQuotes(
+      produce((all) => {
+        delete all[sessionID]
+      }),
+    )
     await rpc(session).remove({ parentID: session.id, sessionID }).then(put, fail)
   }
 
@@ -241,9 +268,30 @@ export function createModel(ctx: Context) {
     composer.focus(commentID)
   }
 
-  /** Adds a quote to the end of the side chat's own draft. */
-  function quoteHere(sessionID: string, text: string) {
-    setDrafts(sessionID, (current = "") => withQuote(current, text))
+  /** Adds a quote card to a composer. */
+  function addQuote(composer: string, text: string, from: QuoteFrom) {
+    const value = text.trim()
+    if (!value) return
+    const source =
+      from === "side"
+        ? { label: ctx.t("quote.side"), icon: "speech-bubble", subject: "earlier in this side chat" }
+        : { label: ctx.t("quote.main"), icon: "speech-bubble", subject: "the main conversation" }
+    setQuotes(composer, (current = []) => [...current, { key: crypto.randomUUID(), type: "quote", text: value, source }])
+  }
+
+  function removeQuote(composer: string, key: string) {
+    setQuotes(composer, (current = []) => current.filter((item) => item.key !== key))
+  }
+
+  function commentQuote(composer: string, key: string, comment: string) {
+    const value = comment.trim()
+    setQuotes(composer, (current = []) =>
+      current.map((item) => {
+        if (item.key !== key) return item
+        const { comment: _, ...rest } = item
+        return value ? { ...rest, comment: value } : rest
+      }),
+    )
   }
 
   function answerToMain(session: SessionRef, transcript: Transcript, sessionID: string) {
@@ -271,7 +319,10 @@ export function createModel(ctx: Context) {
     send,
     remove,
     toMain,
-    quoteHere,
+    quotes: (composer: string) => quotes[composer] ?? [],
+    addQuote,
+    removeQuote,
+    commentQuote,
     answerToMain,
     fail,
     /** True once for a side chat started with a question: its view sends the draft on open. */

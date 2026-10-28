@@ -30,16 +30,6 @@ export function titleFrom(text: string, max = 60): string {
   return flat.length <= max ? flat : `${flat.slice(0, max - 1).trimEnd()}…`
 }
 
-/** Markdown for a quotation, one `>` per line. Empty for a blank selection. */
-export function quote(value: string): string {
-  const text = value.replace(/\r\n?/g, "\n").trim()
-  if (!text) return ""
-  return text
-    .split("\n")
-    .map((line) => (line ? `> ${line}` : ">"))
-    .join("\n")
-}
-
 /** How long a new side chat has to ask its first question before it counts as unused. */
 export const UNUSED_AFTER = 10 * 60_000
 
@@ -52,12 +42,54 @@ export function unused(chat: { title: string; created: number }, messages: reado
   return !ownMessages(messages, chat.created).some((message) => message.type === "user")
 }
 
-/** A draft with a quote added at its end, ready for the question that follows. */
-export function withQuote(draft: string, selection: string): string {
-  const quoted = quote(selection)
-  if (!quoted) return draft
-  const before = draft.trimEnd()
-  return `${before ? `${before}\n\n` : ""}${quoted}\n\n`
+/** Where a quote came from, as the app's composer names it. */
+export interface QuoteSource {
+  readonly label: string
+  readonly icon: string
+  readonly subject: string
+}
+
+/** Quoted text with an optional comment: the shape the app keeps in a user message's `metadata.comments`. */
+export interface Quote {
+  readonly type: "quote"
+  readonly text: string
+  readonly comment?: string
+  readonly source?: QuoteSource
+}
+
+/** A quote as the model reads it, word for word what the main chat's composer sends. */
+export function formatQuote(input: Quote): string {
+  const quoted = `The user quoted the following from ${input.source?.subject ?? "earlier in the conversation"}:\n${input.text
+    .split("\n")
+    .map((line) => `> ${line}`)
+    .join("\n")}`
+  return input.comment ? `${quoted}\n\nThe user made the following comment regarding this quote: ${input.comment}` : quoted
+}
+
+/**
+ * A prompt from typed text and quotes. The model reads the text and every quote; the timeline shows the typed text
+ * and draws each quote as a card, as the main chat does.
+ */
+export function promptOf(text: string, quotes: readonly Quote[]) {
+  const typed = text.trim()
+  const comments = quotes.map((item) => {
+    const comment = item.comment?.trim()
+    return { type: "quote" as const, text: item.text, ...(comment ? { comment } : {}), ...(item.source ? { source: item.source } : {}) }
+  })
+  return {
+    text: [...(typed ? [typed] : []), ...comments.map(formatQuote)].join("\n"),
+    metadata: comments.length ? { displayText: typed, comments } : undefined,
+  }
+}
+
+/** What a user message shows: its typed text and its quotes. Messages from elsewhere show their plain text. */
+export function shownOf(message: { text: string; metadata?: Record<string, unknown> }): { text: string; quotes: Quote[] } {
+  const meta = message.metadata
+  const comments = Array.isArray(meta?.comments) ? meta.comments : []
+  const quotes = comments.flatMap((item): Quote[] =>
+    item && typeof item === "object" && item.type === "quote" && typeof item.text === "string" ? [item as Quote] : [],
+  )
+  return { text: typeof meta?.displayText === "string" ? meta.displayText : message.text, quotes }
 }
 
 const TITLES: Record<string, string> = {

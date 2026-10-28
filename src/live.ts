@@ -1,3 +1,4 @@
+import type { SessionPromptInput } from "@opencode/client"
 import { createData, type Data } from "@opencode/client/solid"
 import type { ServerRef } from "@opencode/plugin/gui"
 import { createEffect, createMemo } from "solid-js"
@@ -61,7 +62,8 @@ export function createTranscript(server: ServerRef, sessionID: string, forked: (
     messages: () => store().session.message.list(sessionID),
     pending: () => store().session.pending.list(sessionID),
     /** Shows the question at once; it goes to the server after `gate` settles. */
-    prompt: (text: string, gate?: Promise<unknown>) => store().session.prompt({ sessionID, text, gate }),
+    prompt: (text: string, metadata: object | undefined, gate?: Promise<unknown>) =>
+      store().session.prompt({ sessionID, text, metadata: metadata as SessionPromptInput["metadata"], gate }),
   }
 }
 

@@ -7,8 +7,8 @@ import type {
 } from "@opencode/client"
 import { createMemo, createSignal, For, Match, onCleanup, onMount, Show, Switch } from "solid-js"
 import { createTranscript } from "./live"
-import { chatOf, draftOf, QUOTE_EVENT, selectedText, type Model } from "./model"
-import { ownMessages, toolSummary } from "./transcript"
+import { chatOf, draftOf, QUOTE_EVENT, selectedText, type Attached, type Model } from "./model"
+import { ownMessages, shownOf, toolSummary, type Quote } from "./transcript"
 
 const OUTPUT_LIMIT = 6000
 
@@ -16,15 +16,159 @@ function clip(text: string) {
   return text.length > OUTPUT_LIMIT ? `${text.slice(0, OUTPUT_LIMIT)}\n…` : text
 }
 
+const QUOTE_PREVIEW = 200
+
+/** A quote as the main chat draws one: the app's `attachment-card` markup, so its styles apply. */
+function QuoteCard(props: {
+  readonly quote: Quote
+  readonly active?: boolean
+  readonly wide?: boolean
+  readonly onClick?: () => void
+}) {
+  const ctx = usePlugin()
+  const text = () => props.quote.text.slice(0, QUOTE_PREVIEW)
+  return (
+    <div
+      data-component="attachment-card"
+      data-surface="base"
+      data-active={props.active ? "true" : undefined}
+      data-clickable={props.onClick ? "true" : undefined}
+      data-wide={props.wide ? "true" : undefined}
+      title={props.quote.comment ? `${props.quote.comment}\n\n${text()}` : text()}
+      onClick={() => props.onClick?.()}
+    >
+      <span data-slot="attachment-card-title">{props.quote.comment || text()}</span>
+      <span data-slot="attachment-card-subtitle">
+        <span data-slot="comment-card-quote">
+          <span data-slot="attachment-card-icon">
+            <ctx.ui.Icon name={(props.quote.source?.icon ?? "outline-quote") as "outline-quote"} size="small" />
+          </span>
+          <span data-slot="attachment-card-label" dir="auto">
+            {props.quote.comment ? text() : (props.quote.source?.label ?? ctx.t("quote.label"))}
+          </span>
+        </span>
+        <Show when={props.onClick}>
+          <span data-slot="comment-card-action" data-commented={props.quote.comment ? "" : undefined}>
+            <span data-slot="attachment-card-icon">
+              <ctx.ui.Icon name="comment" size="small" />
+            </span>
+            <span data-slot="attachment-card-label">
+              {props.quote.comment ? ctx.t("quote.editComment") : ctx.t("quote.addComment")}
+            </span>
+          </span>
+        </Show>
+      </span>
+    </div>
+  )
+}
+
+/** A composer's quote cards. Click one to comment on it; the × removes it. */
+function QuoteCards(props: { readonly model: Model; readonly composer: string; readonly onDone?: () => void }) {
+  const ctx = usePlugin()
+  const [editing, setEditing] = createSignal<string>()
+  const [comment, setComment] = createSignal("")
+  const current = () => props.model.quotes(props.composer).find((item) => item.key === editing())
+
+  const edit = (item: Attached) => {
+    if (editing() === item.key) return setEditing(undefined)
+    setComment(item.comment ?? "")
+    setEditing(item.key)
+  }
+  const close = () => {
+    setEditing(undefined)
+    props.onDone?.()
+  }
+  const save = () => {
+    const key = editing()
+    if (key) props.model.commentQuote(props.composer, key, comment())
+    close()
+  }
+
+  return (
+    <Show when={props.model.quotes(props.composer).length > 0}>
+      <Show when={current()}>
+        {(item) => (
+          <div class="sidechat-comment" data-component="composer-quote-comment">
+            <div class="sidechat-comment-quote">
+              <ctx.ui.Icon name="outline-quote" size="small" />
+              <span>{item().text.slice(0, QUOTE_PREVIEW)}</span>
+            </div>
+            <textarea
+              ref={(element) => queueMicrotask(() => element.focus())}
+              rows={2}
+              value={comment()}
+              placeholder={ctx.t("quote.commentPlaceholder")}
+              aria-label={ctx.t("quote.commentPlaceholder")}
+              onInput={(event) => setComment(event.currentTarget.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Escape") {
+                  event.preventDefault()
+                  close()
+                }
+                if (event.key !== "Enter" || event.shiftKey || event.isComposing || event.keyCode === 229) return
+                event.preventDefault()
+                save()
+              }}
+            />
+            <div class="sidechat-comment-actions">
+              <ctx.ui.Button size="small" variant="ghost-muted" onClick={close}>
+                {ctx.t("quote.cancel")}
+              </ctx.ui.Button>
+              <ctx.ui.Button size="small" variant="contrast" onClick={save}>
+                {ctx.t("quote.comment")}
+              </ctx.ui.Button>
+            </div>
+          </div>
+        )}
+      </Show>
+      <div class="sidechat-quotes">
+        <For each={props.model.quotes(props.composer)}>
+          {(item) => (
+            <div class="sidechat-quote">
+              <QuoteCard quote={item} active={editing() === item.key} onClick={() => edit(item)} />
+              <button
+                type="button"
+                class="sidechat-quote-remove"
+                aria-label={ctx.t("quote.remove")}
+                onClick={() => {
+                  if (editing() === item.key) setEditing(undefined)
+                  props.model.removeQuote(props.composer, item.key)
+                }}
+              >
+                <ctx.ui.Icon name="outline-xmark" size="small" />
+              </button>
+            </div>
+          )}
+        </For>
+      </div>
+    </Show>
+  )
+}
+
 // The app styles these data attributes in every theme, so a bubble here looks like one in the main chat.
-function UserBubble(props: { readonly text: string; readonly pending?: boolean }) {
+function UserBubble(props: { readonly message: { text: string; metadata?: Record<string, unknown> }; readonly pending?: boolean }) {
+  const shown = () => shownOf(props.message)
   return (
     <div class="sidechat-user" data-component="user-message" data-pending={props.pending ? "" : undefined}>
-      <div data-slot="user-message-body">
-        <div data-slot="user-message-text" dir="auto">
-          {props.text}
+      <Show
+        when={shown().text.trim()}
+        fallback={
+          <div data-slot="user-message-comments">
+            <For each={shown().quotes}>{(item) => <QuoteCard quote={item} wide />}</For>
+          </div>
+        }
+      >
+        <div data-slot="user-message-body">
+          <div data-slot="user-message-text" dir="auto" data-comments={shown().quotes.length ? "true" : undefined}>
+            {shown().text}
+            <Show when={shown().quotes.length > 0}>
+              <div data-slot="user-message-comments" data-bounded="true">
+                <For each={shown().quotes}>{(item) => <QuoteCard quote={item} wide />}</For>
+              </div>
+            </Show>
+          </div>
         </div>
-      </div>
+      </Show>
     </div>
   )
 }
@@ -154,7 +298,7 @@ function Message(props: { readonly message: SessionMessageInfo; readonly pending
   return (
     <Switch>
       <Match when={props.message.type === "user" && props.message}>
-        {(user) => <UserBubble text={user().text} pending={props.pending} />}
+        {(user) => <UserBubble message={user()} pending={props.pending} />}
       </Match>
       <Match when={props.message.type === "assistant" && props.message}>
         {(assistant) => <Assistant message={assistant()} />}
@@ -223,8 +367,9 @@ export function ChatView(props: { readonly model: Model; readonly session: Mount
 
   const send = () => {
     pinned = true
-    model.send(props.session, transcript, sessionID(), model.draft(sessionID()))
+    model.send(props.session, transcript, sessionID())
   }
+  const sendable = () => !!model.draft(sessionID()).trim() || model.quotes(sessionID()).length > 0
 
   const focusEnd = () => {
     if (!input) return
@@ -233,7 +378,7 @@ export function ChatView(props: { readonly model: Model; readonly session: Mount
   }
 
   const quoteHere = (text: string) => {
-    model.quoteHere(sessionID(), text)
+    model.addQuote(sessionID(), text, "side")
     focusEnd()
   }
 
@@ -347,6 +492,7 @@ export function ChatView(props: { readonly model: Model; readonly session: Mount
         </For>
 
         <div class="sidechat-composer">
+          <QuoteCards model={model} composer={sessionID()} onDone={focusEnd} />
           <textarea
             ref={input}
             rows={1}
@@ -392,14 +538,14 @@ export function ChatView(props: { readonly model: Model; readonly session: Mount
             />
             <span class="sidechat-spacer" />
             <Show
-              when={running() && !model.draft(sessionID()).trim()}
+              when={running() && !sendable()}
               fallback={
                 <ctx.ui.IconButton
                   icon="arrow-up"
                   label={ctx.t("composer.send")}
                   variant="neutral"
                   size="small"
-                  disabled={!model.draft(sessionID()).trim()}
+                  disabled={!sendable()}
                   onClick={send}
                 />
               }
@@ -427,16 +573,17 @@ export function DraftView(props: { readonly model: Model; readonly session: Moun
   const busy = () => model.starting(props.session)
   let input: HTMLTextAreaElement | undefined
 
+  const sendable = () => !!model.draft(id()).trim() || model.quotes(id()).length > 0
   const send = () => {
-    const text = model.draft(id()).trim()
-    if (text && !busy()) void model.fork(props.session, text)
+    if (sendable() && !busy()) void model.fork(props.session)
   }
-
-  onMount(() => {
+  const focusEnd = () => {
     if (!input) return
     input.focus()
     input.setSelectionRange(input.value.length, input.value.length)
-  })
+  }
+
+  onMount(focusEnd)
 
   return (
     <div class="sidechat">
@@ -447,6 +594,7 @@ export function DraftView(props: { readonly model: Model; readonly session: Moun
       </div>
       <div class="sidechat-dock">
         <div class="sidechat-composer">
+          <QuoteCards model={model} composer={id()} onDone={focusEnd} />
           <textarea
             ref={input}
             rows={1}
@@ -471,7 +619,7 @@ export function DraftView(props: { readonly model: Model; readonly session: Moun
                 label={ctx.t("composer.send")}
                 variant="neutral"
                 size="small"
-                disabled={!model.draft(id()).trim()}
+                disabled={!sendable()}
                 onClick={send}
               />
             </Show>

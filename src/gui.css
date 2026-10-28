@@ -173,6 +173,94 @@
 .sidechat-composer textarea::placeholder {
   color: var(--v2-text-text-faint);
 }
+.sidechat-quotes {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 8px;
+  padding: 2px 2px 4px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.sidechat-quote {
+  position: relative;
+  flex-shrink: 0;
+}
+.sidechat-quote-remove {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  background: var(--v2-icon-icon-muted);
+  color: var(--v2-icon-icon-contrast);
+  outline: 1px solid var(--v2-icon-icon-contrast);
+  opacity: 0;
+  cursor: pointer;
+  transition: opacity 120ms ease;
+}
+.sidechat-quote:hover .sidechat-quote-remove,
+.sidechat-quote-remove:focus-visible {
+  opacity: 1;
+}
+.sidechat-quote-remove svg {
+  width: 10px;
+  height: 10px;
+}
+.sidechat-comment {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 4px;
+  padding: 10px;
+  border: 1px solid var(--v2-border-border-base);
+  border-radius: 8px;
+  background: var(--v2-background-bg-layer-01);
+}
+.sidechat-comment textarea {
+  min-height: 40px;
+  padding: 0;
+  border: none;
+  outline: none;
+  resize: none;
+  background: transparent;
+  color: var(--v2-text-text-base);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.sidechat-comment textarea::placeholder {
+  color: var(--v2-text-text-faint);
+}
+.sidechat-comment-quote {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  color: var(--v2-text-text-muted);
+  font-size: 12px;
+}
+.sidechat-comment-quote span {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.sidechat-comment-quote svg {
+  flex-shrink: 0;
+}
+.sidechat-comment-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .sidechat-quote-remove { transition: none; }
+}
 .sidechat-composer-bar {
   display: flex;
   align-items: center;

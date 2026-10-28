@@ -6,6 +6,7 @@ import type {
   SessionMessageInfo,
 } from "@opencode/client"
 import { createMemo, createSignal, For, Match, onCleanup, onMount, Show, Switch } from "solid-js"
+import { FormCard } from "./form"
 import { createTranscript } from "./live"
 import { chatOf, draftOf, QUOTE_EVENT, selectedText, type Attached, type Model } from "./model"
 import { ownMessages, shownOf, toolSummary, type Quote } from "./transcript"
@@ -477,17 +478,13 @@ export function ChatView(props: { readonly model: Model; readonly session: Mount
         </For>
         <For each={forms()}>
           {(form) => (
-            <div class="sidechat-ask sidechat-ask-row">
-              <div class="sidechat-ask-detail">{ctx.t("form.title", { title: form.title })}</div>
-              <ctx.ui.Button
-                size="small"
-                onClick={() =>
-                  void data().session.form.cancel({ sessionID: sessionID(), formID: form.id }).catch(model.fail)
-                }
-              >
-                {ctx.t("form.skip")}
-              </ctx.ui.Button>
-            </div>
+            <FormCard
+              form={form}
+              onReply={(answer) =>
+                data().session.form.reply({ sessionID: sessionID(), formID: form.id, answer }).catch(model.fail)
+              }
+              onSkip={() => data().session.form.cancel({ sessionID: sessionID(), formID: form.id }).catch(model.fail)}
+            />
           )}
         </For>
 

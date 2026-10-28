@@ -8,7 +8,7 @@ An OpenCode Desktop plugin for side chats. A side chat branches off the chat you
 - **No empty side chats.** **New side chat** opens a composer. The fork happens when you send its first message, so a side chat you never use leaves nothing behind. Listing side chats also deletes any untitled side chat that is over 10 minutes old and has no question after its fork.
 - **Context.** The side chat is a fork of the current chat at its first message, so it knows everything said up to then. Its tab shows only what you say after the fork.
 - **Isolation.** Nothing said in a side chat reaches the main chat. The main chat keeps running while you ask.
-- **Tools.** A side chat has the same tools and permissions as the main chat. When it asks for a permission, answer it in the side chat's tab.
+- **Tools.** A side chat has the same tools and permissions as the main chat. Answer its permission requests and its questions (the `question` tool and other forms) in the side chat's tab.
 - **History.** Closing a tab keeps the side chat. The **Side chats** tab and the composer pill list every side chat of the current chat, newest first. Pick one to reopen it. Delete it from its `⋯` menu or the list.
 
 ## Quotes
@@ -66,7 +66,7 @@ OpenCode installs the package and reloads plugins when the config changes.
 ## Limits
 
 - The GUI API is experimental. This plugin pins `@opencode/plugin@2.2.0`, which matches OpenCode Desktop 2.2.0.
-- The side panel draws its own transcript with the app's styles. It is close to the main timeline but not identical: no diffs, and questions from the `question` tool can only be skipped.
+- The side panel draws its own transcript with the app's styles. It is close to the main timeline but not identical: it shows no diffs.
 - A side chat has no model picker of its own. It uses the main chat's model: before each question, the side chat switches to that model if it differs.
 - Side chats work on the desktop's own server. Deleting the main chat leaves its side chats archived but unlisted.
 - The fork shows on Home for a moment before the GUI archives it.

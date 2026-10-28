@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test"
 import type { SessionMessageInfo } from "@opencode/client"
-import { lastAnswer, ownMessages, PRIMER, quote, titleFrom, toMarkdown, toolSummary, withQuote } from "../src/transcript"
+import { lastAnswer, ownMessages, PRIMER, quote, titleFrom, toMarkdown, toolSummary, unused, withQuote } from "../src/transcript"
 
 const user = (id: string, created: number, text: string) =>
   ({ id, type: "user", time: { created }, text }) as unknown as SessionMessageInfo
@@ -20,6 +20,18 @@ test("ownMessages keeps what came after the fork and hides the primer", () => {
   const primer = { id: "s", type: "synthetic", time: { created: 1000 }, text: "x", metadata: { [PRIMER]: true } }
   const messages = [user("a", 10, "inherited"), primer, user("b", 1000, "first side question"), user("c", 1500, "next")]
   expect(ownMessages(messages as SessionMessageInfo[], 1000).map((message) => message.id)).toEqual(["b", "c"])
+})
+
+test("unused flags only old, untitled side chats with no question after the fork", () => {
+  const forked = 1_000_000
+  const later = forked + 11 * 60_000
+  const inherited = [user("a", 10, "inherited question"), assistant("b", 20, [{ type: "text", text: "old answer" }])]
+  const asked = [...inherited, user("c", forked + 5, "side question")]
+  expect(unused({ title: "", created: forked }, inherited, later)).toBe(true)
+  expect(unused({ title: "", created: forked }, asked, later)).toBe(false)
+  expect(unused({ title: "Why?", created: forked }, inherited, later)).toBe(false)
+  // A fresh fork may be about to send its first question.
+  expect(unused({ title: "", created: forked }, inherited, forked + 60_000)).toBe(false)
 })
 
 test("titleFrom uses the first real line and cuts long ones", () => {

@@ -5,7 +5,7 @@ An OpenCode Desktop plugin for side chats. A side chat branches off the chat you
 ## How it works
 
 - **Start** a side chat with **New side chat** (`mod+alt+b`), the `/side` slash command, the composer pill, or the side panel's **+** menu. `/side why did you pick this approach?` starts one and asks right away. (`mod` is `⌘` on macOS and `Ctrl` elsewhere, so the shortcut is `⌘⌥B` on a Mac.)
-- **No empty side chats.** **New side chat** opens a composer. The fork happens when you send its first message, so a side chat you never use leaves nothing behind.
+- **No empty side chats.** **New side chat** opens a composer. The fork happens when you send its first message, so a side chat you never use leaves nothing behind. Listing side chats also deletes any untitled side chat that is over 10 minutes old and has no question after its fork.
 - **Context.** The side chat is a fork of the current chat at its first message, so it knows everything said up to then. Its tab shows only what you say after the fork.
 - **Isolation.** Nothing said in a side chat reaches the main chat. The main chat keeps running while you ask.
 - **Tools.** A side chat has the same tools and permissions as the main chat. When it asks for a permission, answer it in the side chat's tab.

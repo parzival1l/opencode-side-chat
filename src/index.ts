@@ -1,7 +1,7 @@
 import { Plugin } from "@opencode/plugin"
 import { createRegistry } from "./registry"
 import { SideChat, type State } from "./rpc"
-import { ownMessages, PRIMER, primer, toMarkdown } from "./transcript"
+import { ownMessages, PRIMER, primer, toMarkdown, UNUSED_AFTER, unused } from "./transcript"
 
 export default Plugin.define({
   id: "sidechat",
@@ -19,8 +19,22 @@ export default Plugin.define({
       return next
     }
 
+    // Deletes side chats nobody asked anything in, then answers with what is left.
+    async function prune(parentID: string): Promise<State> {
+      let chats = await registry.list(parentID)
+      const now = Date.now()
+      for (const chat of chats) {
+        if (chat.title || now - chat.created < UNUSED_AFTER) continue
+        const messages = await ctx.session.context({ sessionID: chat.sessionID }).catch(() => undefined)
+        if (messages && !unused(chat, messages, now)) continue
+        await ctx.session.remove({ sessionID: chat.sessionID }).catch(() => undefined)
+        chats = await registry.remove(parentID, chat.sessionID)
+      }
+      return state(parentID, chats)
+    }
+
     const rpc = await ctx.rpc.register(SideChat, {
-      list: async (input) => state((input as { parentID: string }).parentID),
+      list: async (input) => prune((input as { parentID: string }).parentID),
 
       link: async (input) => {
         const { parentID, sessionID } = input as { parentID: string; sessionID: string }

@@ -40,6 +40,18 @@ export function quote(value: string): string {
     .join("\n")
 }
 
+/** How long a new side chat has to ask its first question before it counts as unused. */
+export const UNUSED_AFTER = 10 * 60_000
+
+/**
+ * A side chat nobody asked anything in: no title, no question after the fork, and older than `UNUSED_AFTER`.
+ * Before forks waited for the first message, opening a side chat and leaving it made one of these.
+ */
+export function unused(chat: { title: string; created: number }, messages: readonly Info[], now: number): boolean {
+  if (chat.title || now - chat.created < UNUSED_AFTER) return false
+  return !ownMessages(messages, chat.created).some((message) => message.type === "user")
+}
+
 /** A draft with a quote added at its end, ready for the question that follows. */
 export function withQuote(draft: string, selection: string): string {
   const quoted = quote(selection)

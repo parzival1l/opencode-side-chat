@@ -66,6 +66,6 @@ OpenCode installs the package and reloads plugins when the config changes.
 
 - The GUI API is experimental. This plugin pins `@opencode/plugin@2.2.0`, which matches OpenCode Desktop 2.2.0.
 - The side panel draws its own transcript with the app's styles. It is close to the main timeline but not identical: no diffs, and questions from the `question` tool can only be skipped.
-- A side chat has no model picker of its own. It uses the main chat's model: before each question, the side chat switches to that model if it differs. Its composer names the model.
+- A side chat has no model picker of its own. It uses the main chat's model: before each question, the side chat switches to that model if it differs.
 - Side chats work on the desktop's own server. Deleting the main chat leaves its side chats archived but unlisted.
 - The fork shows on Home for a moment before the GUI archives it.

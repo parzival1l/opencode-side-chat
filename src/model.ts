@@ -267,7 +267,6 @@ export function createModel(ctx: Context) {
     showList,
     start,
     fork,
-    modelOf,
     starting: (session: SessionRef) => !!starting[session.key],
     send,
     remove,

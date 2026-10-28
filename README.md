@@ -63,6 +63,13 @@ OpenCode installs the package and reloads plugins when the config changes.
 - The server reloads when a file in `src/` changes.
 - `bun run test` covers the link registry and the transcript helpers. `bun run typecheck` runs `tsc`.
 
+## Release
+
+1. Bump `version` in `package.json` and commit it as `Release <version>`.
+2. Push to `main`.
+
+The `Release` workflow runs the checks on every push. On `main`, it publishes the version to npm if npm does not have it yet, then creates a GitHub release `v<version>`. It publishes through npm trusted publishing, so the repo holds no npm token.
+
 ## Limits
 
 - The GUI API is experimental. This plugin pins `@opencode/plugin@2.2.0`, which matches OpenCode Desktop 2.2.0.

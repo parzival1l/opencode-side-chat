@@ -5,7 +5,7 @@ import type {
   SessionMessageAssistantTool,
   SessionMessageInfo,
 } from "@opencode/client"
-import { createMemo, createSignal, For, Match, onCleanup, onMount, Show, Switch } from "solid-js"
+import { createEffect, createMemo, createSignal, For, Match, onCleanup, onMount, Show, Switch } from "solid-js"
 import { createStore } from "solid-js/store"
 import { Portal } from "solid-js/web"
 import { FormCard } from "./form"
@@ -14,6 +14,8 @@ import { chatOf, draftOf, QUOTE_EVENT, selectedText, type Model } from "./model"
 import { ownMessages, shownOf, toolSummary, type Quote } from "./transcript"
 
 const OUTPUT_LIMIT = 6000
+// Scrolling within this many pixels of the top loads older messages.
+const OLDER_AT = 400
 
 function clip(text: string) {
   return text.length > OUTPUT_LIMIT ? `${text.slice(0, OUTPUT_LIMIT)}\n…` : text
@@ -474,6 +476,23 @@ export function ChatView(props: { readonly model: Model; readonly session: Mount
     if (pinned && scroller) scroller.scrollTop = scroller.scrollHeight
   }
 
+  // Like the main chat, the side chat opens on its latest messages and loads older ones as you scroll up.
+  const loadOlder = () => {
+    let fromBottom: number | undefined
+    void transcript
+      .older(() => {
+        if (scroller) fromBottom = scroller.scrollHeight - scroller.scrollTop
+      })
+      ?.then(() => {
+        if (scroller && fromBottom !== undefined && !pinned) scroller.scrollTop = scroller.scrollHeight - fromBottom
+      })
+  }
+  // A page too short to scroll can't be scrolled up, so it loads the next one itself.
+  createEffect(() => {
+    transcript.messages().length
+    if (transcript.hasOlder() && scroller && scroller.scrollHeight <= scroller.clientHeight) queueMicrotask(loadOlder)
+  })
+
   const send = () => {
     pinned = true
     model.send(props.session, transcript, sessionID())
@@ -541,6 +560,7 @@ export function ChatView(props: { readonly model: Model; readonly session: Mount
       <div class="sidechat-scroll" ref={scroller} onScroll={(event) => {
         const el = event.currentTarget
         pinned = el.scrollHeight - el.scrollTop - el.clientHeight < 24
+        if (el.scrollTop < OLDER_AT) loadOlder()
       }}>
         <div class="sidechat-log" ref={content}>
           <Show when={messages().length === 0}>

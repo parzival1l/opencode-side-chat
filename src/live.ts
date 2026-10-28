@@ -37,30 +37,44 @@ export function createTranscript(server: ServerRef, sessionID: string, forked: (
     })
   })
 
-  // Pages back until the fork point, so a long side chat shows from its first question.
-  async function fill(data: Data) {
+  // True while the side chat may have questions older than the loaded page. A fork copies the main chat's history,
+  // so a loaded message from before the fork means the side chat's own messages are all here.
+  const hasOlder = () => {
+    const data = store()
     const since = forked()
-    while (since !== undefined && data.session.message.more(sessionID)) {
-      const oldest = data.session.message.list(sessionID)[0]
-      if (oldest && oldest.time.created < since) return
-      await data.session.message.loadMore(sessionID)
-    }
+    if (since === undefined || !data.session.message.more(sessionID)) return false
+    const oldest = data.session.message.list(sessionID)[0]
+    return !oldest || oldest.time.created >= since
   }
+
+  let loading: Promise<void> | undefined
 
   // The store drops what it loaded when the connection drops, so this reloads on every reconnect.
   createEffect(() => {
     const data = store()
     if (!server.connected) return
-    void data.session.message
-      .sync(sessionID)
-      .then(() => fill(data))
-      .catch(() => undefined)
+    void data.session.message.sync(sessionID).catch(() => undefined)
     void data.session.pending.sync(sessionID).catch(() => undefined)
   })
 
   return {
     messages: () => store().session.message.list(sessionID),
     pending: () => store().session.pending.list(sessionID),
+    hasOlder,
+    /**
+     * Loads the page before the oldest loaded message, as the main chat does when you scroll up. `before` runs just
+     * before the page shows, so the view can keep its scroll position.
+     */
+    older(before?: () => void) {
+      if (loading || !hasOlder()) return loading
+      loading = store()
+        .session.message.loadMore(sessionID, { beforePublish: before })
+        .catch(() => undefined)
+        .finally(() => {
+          loading = undefined
+        })
+      return loading
+    },
     /** Shows the question at once; it goes to the server after `gate` settles. */
     prompt: (text: string, metadata: object | undefined, gate?: Promise<unknown>) =>
       store().session.prompt({ sessionID, text, metadata: metadata as SessionPromptInput["metadata"], gate }),

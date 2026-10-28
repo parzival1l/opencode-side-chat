@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test"
 import type { SessionMessageInfo } from "@opencode/client"
-import { lastAnswer, ownMessages, PRIMER, quote, titleFrom, toMarkdown, toolSummary } from "../src/transcript"
+import { lastAnswer, ownMessages, PRIMER, quote, titleFrom, toMarkdown, toolSummary, withQuote } from "../src/transcript"
 
 const user = (id: string, created: number, text: string) =>
   ({ id, type: "user", time: { created }, text }) as unknown as SessionMessageInfo
@@ -32,6 +32,12 @@ test("titleFrom uses the first real line and cuts long ones", () => {
 test("quote marks every line and keeps blank lines inside the quote", () => {
   expect(quote("one\r\n\r\ntwo")).toBe("> one\n>\n> two")
   expect(quote("   ")).toBe("")
+})
+
+test("withQuote adds the quote after the draft and leaves room for the question", () => {
+  expect(withQuote("", "one\ntwo")).toBe("> one\n> two\n\n")
+  expect(withQuote("Why this?\n", "one")).toBe("Why this?\n\n> one\n\n")
+  expect(withQuote("Why this?", "  ")).toBe("Why this?")
 })
 
 test("toolSummary names what each tool touched", () => {

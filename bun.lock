@@ -8,6 +8,7 @@
         "@opencode/plugin": "2.2.0",
       },
       "devDependencies": {
+        "@opencode/client": "2.2.0",
         "@types/bun": "^1.4.4",
         "solid-js": "^1.9.17",
         "typescript": "^7.0.2",

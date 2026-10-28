@@ -1,10 +1,17 @@
 import { createKeyed, type Context, type SessionRef } from "@opencode/plugin/gui"
 import { onCleanup } from "solid-js"
 import { createStore, produce } from "solid-js/store"
+import type { Transcript } from "./live"
 import { SideChat, type Chat, type State } from "./rpc"
-import { lastAnswer, ownMessages, quote, titleFrom } from "./transcript"
+import { lastAnswer, ownMessages, quote, titleFrom, withQuote } from "./transcript"
 
 export const LIST = "list"
+
+/**
+ * A cancelable DOM event a plugin's "Quote" action dispatches on the selected text, with `detail: { text }`. A side
+ * chat cancels it and takes the quote into its own composer; otherwise the quote goes to the main chat.
+ */
+export const QUOTE_EVENT = "opencode:quote"
 const CHAT = "chat-"
 
 /** The panel tab id of a side chat, and back. */
@@ -30,6 +37,8 @@ export function createModel(ctx: Context) {
   const [drafts, setDrafts] = createStore<Record<string, string>>({})
   const loading = new Set<string>()
   const starting = new Set<string>()
+  // Side chats whose draft goes out as soon as their view opens: `/side <question>`.
+  const autosend = new Set<string>()
 
   const rpc = (session: SessionRef) => session.server.client.rpc(SideChat)
   // RPC replies arrive untyped; the server's output schema guarantees a State.
@@ -85,11 +94,12 @@ export function createModel(ctx: Context) {
     ctx.layout.open(key(LIST), session, { tab: "select" })
   }
 
-  function send(session: SessionRef, sessionID: string, text: string) {
+  /** Sends through the side chat's own transcript, so the question shows the moment it is sent. */
+  function send(session: SessionRef, transcript: Transcript, sessionID: string, text: string) {
     const value = text.trim()
     if (!value) return
     setDrafts(sessionID, "")
-    session.server.data.session.prompt({ sessionID, text: value }).catch((error: unknown) => {
+    transcript.prompt(value).catch((error: unknown) => {
       setDrafts(sessionID, (current) => current || text)
       fail(error)
     })
@@ -122,9 +132,11 @@ export function createModel(ctx: Context) {
       forked = info.id
       data.session.remember(info)
       put(await rpc(session).link({ parentID: session.id, sessionID: info.id }))
-      if (quoted) setDrafts(info.id, `${quoted}\n\n`)
+      if (question?.trim()) {
+        setDrafts(info.id, question.trim())
+        autosend.add(info.id)
+      } else if (quoted) setDrafts(info.id, `${quoted}\n\n`)
       open(session, info.id)
-      if (question?.trim()) send(session, info.id, question)
     } catch (error) {
       if (forked && !find(session.id, forked)) void client.session.remove({ sessionID: forked }).catch(() => undefined)
       fail(error)
@@ -170,10 +182,15 @@ export function createModel(ctx: Context) {
     composer.focus(commentID)
   }
 
-  function answerToMain(session: SessionRef, sessionID: string) {
+  /** Adds a quote to the end of the side chat's own draft. */
+  function quoteHere(sessionID: string, text: string) {
+    setDrafts(sessionID, (current = "") => withQuote(current, text))
+  }
+
+  function answerToMain(session: SessionRef, transcript: Transcript, sessionID: string) {
     const chat = find(session.id, sessionID)
     if (!chat) return
-    const answer = lastAnswer(ownMessages(session.server.data.session.message.list(sessionID), chat.created))
+    const answer = lastAnswer(ownMessages(transcript.messages(), chat.created))
     if (!answer) {
       ctx.toast.show({ title: ctx.t("answer.none") })
       return
@@ -193,8 +210,11 @@ export function createModel(ctx: Context) {
     send,
     remove,
     toMain,
+    quoteHere,
     answerToMain,
     fail,
+    /** True once for a side chat started with a question: its view sends the draft on open. */
+    takeAutosend: (sessionID: string) => autosend.delete(sessionID),
     draft: (sessionID: string) => drafts[sessionID] ?? "",
     setDraft: (sessionID: string, value: string) => setDrafts(sessionID, value),
     stop(session: SessionRef, sessionID: string) {

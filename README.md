@@ -10,9 +10,14 @@ An OpenCode Desktop plugin for side chats. A side chat branches off the chat you
 - **Tools.** A side chat has the same tools and permissions as the main chat. When it asks for a permission, answer it in the side chat's tab.
 - **History.** Closing a tab keeps the side chat. The **Side chats** tab and the composer pill list every side chat of the current chat, newest first. Pick one to reopen it. Delete it from its `⋯` menu or the list.
 
+## Quotes
+
+- Select text in a side chat and press the quote button. The selection lands in the side chat's own composer as a quote.
+- A plugin's "Quote" action works the same way. Before a quote goes to the main chat, the plugin dispatches a cancelable, bubbling `opencode:quote` event with `detail: { text }` on the selection. A side chat cancels it and takes the quote. [opencode-notepad](https://github.com/parzival1l/opencode-notepad) does this from 0.0.4.
+
 ## Bring answers back
 
-- Select text in a side chat and press the quote button. The selection lands in the main chat's composer as a quote.
+- **Send selection to main chat** in the `⋯` menu quotes the selected side chat text in the main chat's composer.
 - **Send last answer to main chat** in the `⋯` menu quotes the side chat's latest answer.
 - Text you select in the main chat before you start a side chat becomes a quote in the side chat's composer.
 - The main chat's agent can read side chats with two tools. Ask "what did we find in the side chat?".
@@ -25,6 +30,7 @@ An OpenCode Desktop plugin for side chats. A side chat branches off the chat you
 ## Under the hood
 
 - **GUI** (`src/gui.tsx`, built to `dist/gui-experimental.cjs`) forks the chat with `session.fork`, renders the side chat, and sends prompts to the fork.
+- **Transcript** (`src/live.ts`). The app keeps transcripts only for open tabs and the last three chats viewed, and drops any other chat's messages when they change. A side chat is neither, so each open side chat keeps its transcript in a store of its own. That store hears the same server events, filtered to the side chat.
 - **Server** (`src/index.ts`) owns the links. It stores each chat's side chats in the plugin's key-value storage, so they survive restarts.
 - On link, the server archives the fork, which keeps it off Home, the command palette and notifications. It also adds one synthetic message that tells the model it is in a side chat. That message sits after the inherited history, so the parent's prompt cache still applies.
 - **RPC** (`src/rpc.ts`) is the contract between the two parts. The server emits `updated` after every change.

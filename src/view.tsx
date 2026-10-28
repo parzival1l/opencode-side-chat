@@ -6,7 +6,8 @@ import type {
   SessionMessageInfo,
 } from "@opencode/client"
 import { createMemo, createSignal, For, Match, onCleanup, onMount, Show, Switch } from "solid-js"
-import { chatOf, selectedText, type Model } from "./model"
+import { createTranscript } from "./live"
+import { chatOf, QUOTE_EVENT, selectedText, type Model } from "./model"
 import { ownMessages, toolSummary } from "./transcript"
 
 const OUTPUT_LIMIT = 6000
@@ -148,11 +149,13 @@ function Assistant(props: { readonly message: SessionMessageAssistant }) {
   )
 }
 
-function Message(props: { readonly message: SessionMessageInfo }) {
+function Message(props: { readonly message: SessionMessageInfo; readonly pending: boolean }) {
   const ctx = usePlugin()
   return (
     <Switch>
-      <Match when={props.message.type === "user" && props.message}>{(user) => <UserBubble text={user().text} />}</Match>
+      <Match when={props.message.type === "user" && props.message}>
+        {(user) => <UserBubble text={user().text} pending={props.pending} />}
+      </Match>
       <Match when={props.message.type === "assistant" && props.message}>
         {(assistant) => <Assistant message={assistant()} />}
       </Match>
@@ -181,14 +184,14 @@ export function ChatView(props: { readonly model: Model; readonly session: Mount
   const chat = () => model.find(props.session.id, sessionID())
   const data = () => props.session.server.data
 
+  const transcript = createTranscript(props.session.server, sessionID(), () => chat()?.created)
+
   const messages = createMemo(() => {
     const current = chat()
-    return current ? ownMessages(data().session.message.list(current.sessionID), current.created) : []
+    return current ? ownMessages(transcript.messages(), current.created) : []
   })
-  const queued = () => {
-    const id = sessionID()
-    return id ? data().session.pending.list(id).flatMap((item) => (item.type === "user" ? [item.payload.text] : [])) : []
-  }
+  // Questions the server has not handed to the model yet.
+  const pending = createMemo(() => new Set(transcript.pending().map((item) => item.id)))
   const running = () => !!sessionID() && data().session.status(sessionID()) === "running"
   // Shows "Thinking" until the newest answer has something to show.
   const waiting = () => {
@@ -200,14 +203,10 @@ export function ChatView(props: { readonly model: Model; readonly session: Mount
   const forms = () => (sessionID() && data().session.form.list(sessionID())) || []
 
   createKeyed(sessionID, (id) => {
-    void Promise.all([
-      data().session.message.sync(id),
-      data().session.pending.sync(id),
-      data().session.permission.sync(id),
-      data().session.form.sync(id),
-    ]).catch(() => undefined)
+    void Promise.all([data().session.permission.sync(id), data().session.form.sync(id)]).catch(() => undefined)
   })
 
+  let root: HTMLDivElement | undefined
   let scroller: HTMLDivElement | undefined
   let content: HTMLDivElement | undefined
   let input: HTMLTextAreaElement | undefined
@@ -217,19 +216,43 @@ export function ChatView(props: { readonly model: Model; readonly session: Mount
     if (pinned && scroller) scroller.scrollTop = scroller.scrollHeight
   }
 
-  onMount(() => {
-    if (!content) return
-    const observer = new ResizeObserver(toBottom)
-    observer.observe(content)
-    onCleanup(() => observer.disconnect())
-    toBottom()
-    input?.focus()
-  })
-
   const send = () => {
     pinned = true
-    model.send(props.session, sessionID(), model.draft(sessionID()))
+    model.send(props.session, transcript, sessionID(), model.draft(sessionID()))
   }
+
+  const focusEnd = () => {
+    if (!input) return
+    input.focus()
+    input.setSelectionRange(input.value.length, input.value.length)
+  }
+
+  const quoteHere = (text: string) => {
+    model.quoteHere(sessionID(), text)
+    focusEnd()
+  }
+
+  // A "Quote" on text selected in this side chat lands in this side chat's composer, not the main chat's.
+  const onQuote = (event: Event) => {
+    const text = (event as CustomEvent<{ text?: unknown }>).detail?.text
+    if (typeof text !== "string" || !text.trim()) return
+    event.preventDefault()
+    window.getSelection()?.removeAllRanges()
+    quoteHere(text)
+  }
+
+  onMount(() => {
+    root?.addEventListener(QUOTE_EVENT, onQuote)
+    onCleanup(() => root?.removeEventListener(QUOTE_EVENT, onQuote))
+    if (content) {
+      const observer = new ResizeObserver(toBottom)
+      observer.observe(content)
+      onCleanup(() => observer.disconnect())
+    }
+    toBottom()
+    if (model.takeAutosend(sessionID())) send()
+    else focusEnd()
+  })
 
   const onKeyDown = (event: KeyboardEvent) => {
     if (event.key !== "Enter" || event.shiftKey || event.isComposing || event.keyCode === 229) return
@@ -237,27 +260,36 @@ export function ChatView(props: { readonly model: Model; readonly session: Mount
     send()
   }
 
-  const quoteSelection = () => {
+  // Reads the selection inside this side chat's transcript, or explains why there is none.
+  const selection = () => {
     const text = selectedText(".sidechat-log")
-    if (!text) {
-      ctx.toast.show({ title: ctx.t("quote.select") })
-      return
-    }
-    model.toMain(props.session, sessionID(), text)
+    if (!text) ctx.toast.show({ title: ctx.t("quote.select") })
+    return text
+  }
+
+  const quoteSelection = () => {
+    const text = selection()
+    if (!text) return
+    window.getSelection()?.removeAllRanges()
+    quoteHere(text)
+  }
+
+  const selectionToMain = () => {
+    const text = selection()
+    if (text) model.toMain(props.session, sessionID(), text)
   }
 
   return (
-    <div class="sidechat">
+    <div class="sidechat" ref={root}>
       <div class="sidechat-scroll" ref={scroller} onScroll={(event) => {
         const el = event.currentTarget
         pinned = el.scrollHeight - el.scrollTop - el.clientHeight < 24
       }}>
         <div class="sidechat-log" ref={content}>
-          <Show when={messages().length === 0 && queued().length === 0}>
+          <Show when={messages().length === 0}>
             <p class="sidechat-hint">{ctx.t("empty.chat")}</p>
           </Show>
-          <For each={messages()}>{(message) => <Message message={message} />}</For>
-          <For each={queued()}>{(text) => <UserBubble text={text} pending />}</For>
+          <For each={messages()}>{(message) => <Message message={message} pending={pending().has(message.id)} />}</For>
           <Show when={waiting()}>
             <div class="sidechat-waiting">
               <ctx.ui.Loader size="small" />
@@ -331,9 +363,14 @@ export function ChatView(props: { readonly model: Model; readonly session: Mount
               placement="top-start"
               items={[
                 {
+                  label: ctx.t("selection.main"),
+                  icon: "outline-quote",
+                  onSelect: selectionToMain,
+                },
+                {
                   label: ctx.t("answer.action"),
                   icon: "arrow-left",
-                  onSelect: () => model.answerToMain(props.session, sessionID()),
+                  onSelect: () => model.answerToMain(props.session, transcript, sessionID()),
                 },
                 {
                   label: ctx.t("list.show"),

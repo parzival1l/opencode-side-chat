@@ -40,6 +40,14 @@ export function quote(value: string): string {
     .join("\n")
 }
 
+/** A draft with a quote added at its end, ready for the question that follows. */
+export function withQuote(draft: string, selection: string): string {
+  const quoted = quote(selection)
+  if (!quoted) return draft
+  const before = draft.trimEnd()
+  return `${before ? `${before}\n\n` : ""}${quoted}\n\n`
+}
+
 const TITLES: Record<string, string> = {
   read: "Read",
   edit: "Edit",
